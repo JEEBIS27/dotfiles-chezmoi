@@ -1,3 +1,4 @@
+import "../jeebis.bar/AnimationTiming.js" as Timing
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -235,7 +236,7 @@ Panel {
   // fade so the changeover reads as one organism rather than a hard cut.
   Timer {
     id: phraseTimer
-    interval: 2800
+    interval: Timing.powerMessage.presentMs
     running: root.opened && root.rotatingPhrases
     repeat: true
     triggeredOnStart: false
@@ -246,7 +247,7 @@ Panel {
     id: phraseSwap
     PropertyAnimation {
       target: heroStatus; property: "opacity"
-      to: 0.0; duration: 180; easing.type: Easing.OutQuad
+      to: 0.0; duration: Timing.powerMessage.leavingMs; easing.type: Easing.OutQuad
     }
     ScriptAction {
       script: {
@@ -256,7 +257,7 @@ Panel {
     }
     PropertyAnimation {
       target: heroStatus; property: "opacity"
-      to: 1.0; duration: 260; easing.type: Easing.InQuad
+      to: 1.0; duration: Timing.powerMessage.enteringMs; easing.type: Easing.InQuad
     }
   }
 
@@ -366,7 +367,7 @@ Panel {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
 
-            Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: Timing.powerStatus.changingMs } }
           }
 
           Column {
@@ -413,7 +414,7 @@ Panel {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
 
-            Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: Timing.powerStatus.changingMs } }
           }
         }
 
@@ -438,16 +439,16 @@ Panel {
             color: root.batteryFillColor
             width: Math.max(barTrack.height, barTrack.width * root.batteryFraction)
 
-            Behavior on width { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-            Behavior on color { ColorAnimation { duration: 220 } }
+            Behavior on width { NumberAnimation { duration: Timing.powerGauge.resizingMs; easing.type: Easing.OutCubic } }
+            Behavior on color { ColorAnimation { duration: Timing.powerGauge.changingMs } }
 
             // Subtle pulse while charging — visible signal that energy is flowing in.
             SequentialAnimation on opacity {
               running: root.charging && !root.fullyCharged && root.opened
               loops: Animation.Infinite
               alwaysRunToEnd: true
-              NumberAnimation { from: 1.0; to: 0.55; duration: 950; easing.type: Easing.InOutSine }
-              NumberAnimation { from: 0.55; to: 1.0; duration: 950; easing.type: Easing.InOutSine }
+              NumberAnimation { from: 1.0; to: 0.55; duration: Timing.powerGauge.dimmingMs; easing.type: Easing.InOutSine }
+              NumberAnimation { from: 0.55; to: 1.0; duration: Timing.powerGauge.brighteningMs; easing.type: Easing.InOutSine }
             }
           }
         }

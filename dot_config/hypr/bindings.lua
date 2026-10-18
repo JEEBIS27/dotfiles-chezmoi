@@ -91,6 +91,20 @@ local function is_scrolling()
     return workspace and workspace.tiled_layout == "scrolling"
 end
 
+-- Dwindle full width uses Hyprland's maximized state. Directional focus,
+-- swap, and move dispatchers are rejected while that state is active. Leave
+-- maximized mode first; real fullscreen (mode 2) remains untouched.
+local function prepare_directional_action()
+    if is_scrolling() then
+        return
+    end
+
+    local active = hl.get_active_window()
+    if active and active.fullscreen == 1 then
+        hl.dispatch(hl.dsp.window.fullscreen({ mode = "maximized", action = "unset" }))
+    end
+end
+
 local function has_vertical_split_neighbor(active, workspace)
     if not active or not workspace then
         return false
@@ -196,6 +210,8 @@ local function direction_for(item)
 end
 
 local function focus_direction(item)
+    prepare_directional_action()
+
     if item.vim == "J" or item.vim == "K" then
         local active = hl.get_active_window()
         local workspace = hl.get_active_workspace()
@@ -217,11 +233,87 @@ local function focus_direction(item)
     end
 end
 
+local function direction_for_float(item)
+    return is_scrolling() and item.scroll_direction or item.direction
+end
+
+local function tiled_windows_except(active, workspace)
+    local tiled = {}
+    for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do
+        if not window.floating and window.address ~= active.address then
+            table.insert(tiled, window)
+        end
+    end
+    return tiled
+end
+
+local function edge_window(windows, direction)
+    local horizontal = direction == "l" or direction == "r"
+    local reverse = direction == "r" or direction == "d"
+    local best, best_primary, best_cross
+
+    for _, window in ipairs(windows) do
+        local primary = horizontal and (window.at.x + window.size.x / 2)
+            or (window.at.y + window.size.y / 2)
+        local cross = horizontal and (window.at.y + window.size.y / 2)
+            or (window.at.x + window.size.x / 2)
+        if not best
+            or (reverse and primary > best_primary)
+            or (not reverse and primary < best_primary)
+            or (primary == best_primary and cross < best_cross) then
+            best, best_primary, best_cross = window, primary, cross
+        end
+    end
+
+    return best
+end
+
 local function swap_direction(item)
+    local active = hl.get_active_window()
+    if active and active.floating then
+        local workspace = hl.get_active_workspace()
+        if not workspace then return end
+
+        local target = edge_window(tiled_windows_except(active, workspace), direction_for_float(item))
+        if not target then return end
+
+        local float_x, float_y = active.at.x, active.at.y
+        local float_width, float_height = active.size.x, active.size.y
+        hl.dispatch(hl.dsp.window.float({ action = "off", window = active }))
+        hl.timer(function()
+            hl.dispatch(hl.dsp.focus({ window = active }))
+            hl.dispatch(hl.dsp.window.swap({ target = target }))
+            hl.timer(function()
+                hl.dispatch(hl.dsp.window.float({ action = "on", window = target }))
+                hl.dispatch(hl.dsp.window.resize({
+                    window = target, x = float_width, y = float_height, relative = false,
+                }))
+                hl.dispatch(hl.dsp.window.move({
+                    window = target, x = float_x, y = float_y, relative = false,
+                }))
+                hl.dispatch(hl.dsp.focus({ window = active }))
+            end, { timeout = 50, type = "oneshot" })
+        end, { timeout = 50, type = "oneshot" })
+        return
+    end
+
+    prepare_directional_action()
     hl.dispatch(hl.dsp.window.swap({ direction = direction_for(item) }))
 end
 
 local function move_direction(item)
+    local active = hl.get_active_window()
+    if active and active.floating then
+        hl.dispatch(hl.dsp.window.move({
+            window = active,
+            x = item.resize.x or 0,
+            y = item.resize.y or 0,
+            relative = true,
+        }))
+        return
+    end
+
+    prepare_directional_action()
     hl.dispatch(hl.dsp.window.move({ direction = direction_for(item) }))
 end
 
@@ -233,6 +325,23 @@ local function resize(item, target_ratio)
     local monitor = hl.get_active_monitor()
     local active = hl.get_active_window()
     if not monitor or not active then
+        return
+    end
+
+    -- Floating geometry is independent of tiled columns and neighbor limits.
+    if active.floating then
+        local x = item.resize and item.resize.x or 0
+        local y = item.resize and item.resize.y or 0
+        if target_ratio then
+            local logical_width = logical_monitor_size(monitor)
+            x = target_ratio * logical_width - active.size.x
+        end
+        hl.dispatch(hl.dsp.window.resize({
+            window = active,
+            x = x,
+            y = y,
+            relative = true,
+        }))
         return
     end
 
@@ -391,7 +500,6 @@ local function move_to_previous_column_if_full_width_rightmost(was_full_width_ri
     hl.dispatch(hl.dsp.focus({ window = active }))
 end
 
-local full_width_restore = {}
 
 local function toggle_full_width()
     local monitor = hl.get_active_monitor()
@@ -405,29 +513,59 @@ local function toggle_full_width()
         return
     end
 
-    local address = active.address
-    local saved_width = full_width_restore[address]
     local currently_full_width = active.size.x >= logical_width * 0.9
 
-    if saved_width and currently_full_width then
+    if currently_full_width then
         local restore_rightmost = is_scrolling() and rightmost_column_is_full_width()
         if is_scrolling() then
-            hl.dispatch(hl.dsp.layout("colresize " .. string.format("%.4f", saved_width)))
+            hl.dispatch(hl.dsp.layout("colresize 0.5"))
         else
             hl.dispatch(hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
-            resize({ scroll_resize = { x = 0 }, resize = { x = 0 } }, saved_width)
+            resize({ scroll_resize = { x = 0 }, resize = { x = 0 } }, 0.5)
         end
-        full_width_restore[address] = nil
         move_to_previous_column_if_full_width_rightmost(restore_rightmost)
         return
     end
 
-    full_width_restore[address] = active.size.x / logical_width
     if is_scrolling() then
         hl.dispatch(hl.dsp.layout("colresize 1"))
     else
         hl.dispatch(hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
     end
+end
+
+local function launch_codex()
+    local workspace = hl.get_active_workspace()
+    if not workspace then return end
+
+    local existing = {}
+    for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do
+        existing[window.address] = true
+    end
+
+    hl.dispatch(hl.dsp.exec_cmd(
+        "omarchy-launch-tui --app-id=org.omarchy.codex /home/jeebis/.local/bin/jeebis-codex-herdr"
+    ))
+
+    local attempts = 0
+    local function maximize_codex_window()
+        attempts = attempts + 1
+        for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do
+            if not existing[window.address]
+                and window.class == "org.wezfurlong.wezterm"
+                and type(window.title) == "string"
+                and window.title:match("^Codex") then
+                hl.dispatch(hl.dsp.focus({ window = window }))
+                toggle_full_width()
+                return
+            end
+        end
+        if attempts < 60 then
+            hl.timer(maximize_codex_window, { timeout = 50, type = "oneshot" })
+        end
+    end
+
+    hl.timer(maximize_codex_window, { timeout = 50, type = "oneshot" })
 end
 
 local half_width_restore = {}
@@ -471,6 +609,37 @@ end
 
 -- Dキー: デスクトップ表示とアプリ起動
 local show_desktop_state = {}
+local show_desktop_fade_generation = {}
+
+local function move_window_with_fade(window, workspace)
+    local address = window.address
+    local generation = (show_desktop_fade_generation[address] or 0) + 1
+    show_desktop_fade_generation[address] = generation
+
+    hl.dispatch(hl.dsp.window.set_prop({
+        window = window,
+        prop = "animation",
+        value = "fade",
+    }))
+    hl.dispatch(hl.dsp.window.move({
+        workspace = workspace,
+        follow = false,
+        window = window,
+    }))
+
+    -- Keep the override through the fade, then restore the window's default style.
+    hl.timer(function()
+        if show_desktop_fade_generation[address] ~= generation then
+            return
+        end
+        hl.dispatch(hl.dsp.window.set_prop({
+            window = address,
+            prop = "animation",
+            value = "unset",
+        }))
+        show_desktop_fade_generation[address] = nil
+    end, { timeout = 450, type = "oneshot" })
+end
 
 local function toggle_show_desktop()
     local workspace = hl.get_active_workspace()
@@ -489,11 +658,7 @@ local function toggle_show_desktop()
 
         for _, window in ipairs(special_windows) do
             if restore_addresses[window.address] then
-                hl.dispatch(hl.dsp.window.move({
-                    workspace = workspace_id,
-                    follow = false,
-                    window = window,
-                }))
+                move_window_with_fade(window, workspace_id)
             end
         end
         show_desktop_state[workspace_id] = nil
@@ -521,11 +686,7 @@ local function toggle_show_desktop()
 
     show_desktop_state[workspace_id] = state
     for _, window in ipairs(windows) do
-        hl.dispatch(hl.dsp.window.move({
-            workspace = "special:desktop",
-            follow = false,
-            window = window,
-        }))
+        move_window_with_fade(window, "special:desktop")
     end
 end
 
@@ -533,7 +694,7 @@ hl.unbind("SUPER + D")
 o.bind("SUPER + D", "Toggle show desktop", toggle_show_desktop)
 
 hl.unbind("SUPER + ALT + D")
-o.bind("SUPER + ALT + D", "Codex", { tui = "codex" })
+o.bind("SUPER + ALT + D", "Codex (Herdr, maximized)", launch_codex)
 
 hl.unbind("SUPER + SHIFT + D")
 o.bind(
@@ -543,32 +704,13 @@ o.bind(
 )
 
 hl.unbind("SUPER + SHIFT + ALT + D")
-o.bind("SUPER + SHIFT + ALT + D", "ChatGPT", { launch = "chatgpt" })
+o.bind("SUPER + SHIFT + ALT + D", "ChatGPT (new window here)", { launch = "/home/jeebis/.local/bin/jeebis-chatgpt-new-window" })
 
--- Fキー: ウィンドウ操作とファイルマネージャー
-hl.unbind("SUPER + F")
-o.bind("SUPER + F", "Full width", toggle_full_width)
-
-hl.unbind("SUPER + CTRL + F")
-o.bind("SUPER + CTRL + F", "Toggle 50% window width", toggle_half_width)
-
-hl.unbind("SUPER + SHIFT + F")
-o.bind(
-    "SUPER + SHIFT + F",
-    "Fullscreen",
-    hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" })
-)
-
-hl.unbind("SUPER + SHIFT + CTRL + F")
-hl.unbind("SUPER + CTRL + SHIFT + F")
-o.bind(
-    "SUPER + SHIFT + CTRL + F",
-    "Tiled full screen",
-    "omarchy-hyprland-window-tiled-fullscreen-toggle"
-)
-
+-- Old Z bindings are retired; Shift+F owns maximize.
+for _, key in ipairs({ "SUPER + Z", "SUPER + CTRL + Z", "SUPER + SHIFT + Z", "SUPER + CTRL + SHIFT + Z" }) do hl.unbind(key) end
 hl.unbind("SUPER + ALT + F")
-o.bind("SUPER + ALT + F", "Yazi file manager", { tui = "yazi" })
+hl.unbind("SUPER + Y")
+o.bind("SUPER + Y", "Yazi file manager", { launch = "gtk-launch yazi" })
 
 hl.unbind("SUPER + SHIFT + ALT + F")
 hl.unbind("SUPER + ALT + SHIFT + F")
@@ -581,11 +723,11 @@ for _, item in ipairs(directions) do
     o.bind("SUPER + " .. item.key, nil, function() focus_direction(item) end)
     o.bind("SUPER + " .. item.vim, nil, function() focus_direction(item) end)
 
-    -- SUPER + SHIFT + 矢印/HJKL: ウィンドウをSwap
+    -- SUPER + SHIFT + 矢印/HJKL: リサイズ
     hl.unbind("SUPER + SHIFT + " .. item.key)
     hl.unbind("SUPER + SHIFT + " .. item.vim)
-    o.bind("SUPER + SHIFT + " .. item.key, "Swap window", function() swap_direction(item) end)
-    o.bind("SUPER + SHIFT + " .. item.vim, "Swap window", function() swap_direction(item) end)
+    o.bind("SUPER + SHIFT + " .. item.key, "Resize window", function() resize(item) end)
+    o.bind("SUPER + SHIFT + " .. item.vim, "Resize window", function() resize(item) end)
 
     -- SUPER + SHIFT + CTRL + 矢印/HJKL: ウィンドウをMove
     local move_key = "SUPER + SHIFT + CTRL + "
@@ -597,16 +739,16 @@ for _, item in ipairs(directions) do
     o.bind(move_key .. item.key, "Move window", function() move_direction(item) end)
     o.bind(move_key .. item.vim, "Move window", function() move_direction(item) end)
 
-    -- SUPER + CTRL + H/J/K/L で拡張・縮小
+    -- SUPER + CTRL + H/J/K/L: Swap (Shift is reserved for resize)
     hl.unbind("SUPER + CTRL + " .. item.vim)
     o.bind("SUPER + CTRL + " .. item.vim, nil, function()
-        resize(item)
+        swap_direction(item)
     end)
 
-    -- SUPER + CTRL + 矢印キーにも同じリサイズを割り当てる
+    -- Same swap operation on arrows
     hl.unbind("SUPER + CTRL + " .. item.key)
     o.bind("SUPER + CTRL + " .. item.key, nil, function()
-        resize(item)
+        swap_direction(item)
     end)
 
 end
@@ -618,7 +760,8 @@ o.bind("SUPER + ALT + CTRL + K", "Herdr keybindings", "omarchy-menu-herdr-keybin
 -- H/J/K/L にあった既定機能を Shift 付きへ移し
 o.bind("SUPER + SHIFT + ALT + J", "Toggle window split", hl.dsp.layout("togglesplit"))
 o.bind("SUPER + SHIFT + ALT + K", "Keybindings", "omarchy-menu-keybindings")
-o.bind("SUPER + SHIFT + ALT + L", "Toggle workspace layout", "omarchy-hyprland-workspace-layout-toggle")
+hl.unbind("SUPER + SHIFT + T")
+o.bind("SUPER + SHIFT + T", "Toggle workspace layout", "omarchy-hyprland-workspace-layout-toggle")
 
 
 -- Reveal the app island for every workspace command, including reselecting
@@ -646,3 +789,100 @@ for _, binding in ipairs({
     hl.unbind(binding.keys)
     o.bind(binding.keys, binding.description, focus_workspace_with_apps(binding.workspace))
 end
+
+
+-- Unified layout: Super / Ctrl+Alt / Alt / Ctrl.
+for _, key in ipairs({ "SUPER + W", "SUPER + Q", "SUPER + RETURN", "SUPER + SHIFT + RETURN",
+    "SUPER + F", "SUPER + SHIFT + F", "SUPER + ALT + RETURN", "SUPER + SHIFT + ALT + RETURN",
+    "ALT + TAB", "ALT + SHIFT + TAB", "CTRL + ALT + TAB", "CTRL + ALT + SHIFT + TAB" }) do
+    hl.unbind(key)
+end
+o.bind("SUPER + W", "Close window", hl.dsp.window.close())
+-- Freeze the target list before closing: focus may move as windows disappear.
+local function close_workspace_windows()
+    local workspace = hl.get_active_special_workspace() or hl.get_active_workspace()
+    if not workspace then return end
+    local addresses = {}
+    for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do
+        addresses[#addresses + 1] = window.address
+    end
+    for _, address in ipairs(addresses) do
+        hl.dispatch(hl.dsp.window.close({ window = "address:" .. address }))
+    end
+end
+
+hl.unbind("SUPER + SHIFT + W")
+o.bind("SUPER + SHIFT + W", "Close windows in current workspace", close_workspace_windows)
+o.bind("SUPER + F", "Search applications", "omarchy-menu toggle apps")
+o.bind("SUPER + SHIFT + F", "Maximize / restore window", toggle_full_width)
+hl.unbind("SUPER + N")
+o.bind("SUPER + N", "New terminal", { launch = "wezterm start --always-new-process" })
+o.bind("SUPER + ALT + RETURN", "Terminal", { launch = "wezterm start --always-new-process" })
+o.bind("SUPER + SHIFT + ALT + RETURN", "Browser", "omarchy-launch-browser")
+-- Keep application and monitor switching in the desktop's Super namespace.
+for _, binding in ipairs({
+    { "SUPER + SHIFT + PAGE_UP", "Previous workspace", "e-1" },
+    { "SUPER + SHIFT + PAGE_DOWN", "Next workspace", "e+1" },
+}) do
+    hl.unbind(binding[1])
+    o.bind(binding[1], binding[2], focus_workspace_with_apps(binding[3]))
+end
+for _, binding in ipairs({
+    { "SUPER + CTRL + PAGE_UP", "Previous monitor", "-1" },
+    { "SUPER + CTRL + PAGE_DOWN", "Next monitor", "+1" },
+}) do
+    hl.unbind(binding[1])
+    o.bind(binding[1], binding[2], hl.dsp.focus({ monitor = binding[3] }))
+end
+-- Create a new terminal; scrolling's down split consumes its new column.
+local function split_terminal(direction)
+    prepare_directional_action()
+    local workspace = hl.get_active_workspace()
+    if not workspace then return end
+    local existing = {}
+    for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do existing[window.address] = true end
+    local scrolling = is_scrolling()
+    if not scrolling then hl.dispatch(hl.dsp.layout("preselect " .. direction)) end
+    hl.dispatch(hl.dsp.exec_cmd([[wezterm start --always-new-process --cwd "$(omarchy-cmd-terminal-cwd)"]]))
+    if scrolling and direction == "d" then
+        local attempts = 0
+        local function consume_new_terminal()
+            attempts = attempts + 1
+            for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do
+                if not existing[window.address] and window.class == "org.wezfurlong.wezterm" then
+                    hl.dispatch(hl.dsp.focus({ window = window }))
+                    hl.dispatch(hl.dsp.layout("consume"))
+                    return
+                end
+            end
+            if attempts < 60 then hl.timer(consume_new_terminal, { timeout = 50, type = "oneshot" }) end
+        end
+        hl.timer(consume_new_terminal, { timeout = 50, type = "oneshot" })
+    end
+end
+o.bind("SUPER + RETURN", "Split terminal right", function() split_terminal("r") end)
+o.bind("SUPER + SHIFT + RETURN", "Split terminal down", function() split_terminal("d") end)
+
+for _, binding in ipairs({ { "SUPER + PAGE_UP", false }, { "SUPER + PAGE_DOWN", true } }) do
+    hl.unbind(binding[1])
+    o.bind(binding[1], "Cycle window", hl.dsp.window.cycle_next({ next = binding[2] }))
+end
+hl.unbind("SUPER + E")
+o.bind("SUPER + E", "Exchange window: choose direction", hl.dsp.submap("exchange"))
+hl.define_submap("exchange", function()
+    for _, item in ipairs(directions) do
+        local function exchange_once()
+            hl.dispatch(hl.dsp.submap("reset"))
+            swap_direction(item)
+        end
+        for _, key in ipairs({ item.vim, item.key }) do
+            hl.bind(key, exchange_once)
+            hl.bind("SUPER + " .. key, exchange_once)
+        end
+    end
+    hl.bind("escape", hl.dsp.submap("reset"))
+    hl.bind("catchall", hl.dsp.submap("reset"))
+end)
+
+-- Cycle the three preferred Omarchy themes and show the selected theme.
+o.bind("SUPER + ALT + T", "Cycle theme: Tokyonight / Kanagawa / Catppuccin", (os.getenv("HOME") or "") .. "/.local/bin/jeebis-theme-cycle")

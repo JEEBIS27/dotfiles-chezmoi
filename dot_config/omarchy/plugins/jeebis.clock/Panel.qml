@@ -1,3 +1,4 @@
+import "../jeebis.bar/AnimationTiming.js" as Timing
 import QtQuick
 import Quickshell
 import qs.Commons
@@ -457,7 +458,7 @@ Panel {
                   radius: parent.radius
                   color: Style.selectedStateColor(root.contentForeground, Color.accent)
 
-                  Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                  Behavior on width { NumberAnimation { duration: Timing.calendarProgress.changingMs; easing.type: Easing.OutCubic } }
                 }
               }
             }
@@ -515,7 +516,7 @@ Panel {
                   radius: parent.radius
                   color: Style.selectedStateColor(root.contentForeground, Color.accent)
 
-                  Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                  Behavior on width { NumberAnimation { duration: Timing.calendarProgress.changingMs; easing.type: Easing.OutCubic } }
                 }
               }
 

@@ -22,20 +22,33 @@ window of an app appearing on the focused workspace gets an arrival even if the
 app is already running elsewhere (including a window moved into this workspace).
 Switching to a workspace with existing apps, additional windows of an app already
 on that workspace, and initial shell startup use the normal reveal. New applications opened on the focused workspace each
-get a separate capsule to the right for 1000 ms (`dwell` timer). During the next
+first reveal the plain main capsule for 400 ms (`showBaseFirst`), then introduce
+a separate capsule to the right over 240 ms (`entryAnimation`). It remains
+fully displayed for 320 ms (`dwell` timer). During the next
 320 ms (`mergeAnimation`) their icon slides into a reserved position in the main
 capsule while the separate background fades into it. The main icon is hidden
 until handoff completes, preventing duplicate icons. Independent ListModel
 entries preserve each app's timer during simultaneous launches. Closing an app
-or switching workspace cancels pending arrivals for that workspace. After merging, the main capsule automatically stays visible for 1000 ms; pointer
+or switching workspace cancels pending arrivals for that workspace. After merging, the main capsule automatically stays visible for 400 ms; pointer
 hover still holds it open. Other automatic reveals keep their usual two seconds.
 Arrival content spacing uses Style.space(16), matching the other islands. The
 original click-to-focus behavior also works on incoming icons.
 
-Tuning in BarWidget.qml:
-- `hoverExitTimer.interval`: pointer exit grace (preserves the user's current value).
-- `dwell.interval`: separate capsule dwell time, currently 1000 ms.
-- `mergeAnimation.duration`: merge duration, currently 320 ms.
+Tuning is centralized in `../jeebis.bar/AnimationTiming.js` (milliseconds):
+- `appIsland.releasingMs`: hover exit grace.
+- `appIsland.enteringMs` / `leavingMs`: main capsule reveal/hide.
+- `appArrival.preparingMs`: plain base capsule before the separate icon enters.
+- `appArrival.enteringMs`: separate capsule entrance.
+- `appArrival.presentMs`: fully displayed separate capsule dwell.
+- `appArrival.joiningMs`: icon merge and synchronized width adjustment.
+- `appArrival.settledMs`: main capsule hold after merge.
+- `appDeparture.reorderingMs`: icon reorder inside the main row before splitting.
+- `appDeparture.preparingMs`: retained closed icon before splitting.
+- `appDeparture.separatingMs`: icon split and synchronized width adjustment.
+- `appDeparture.leavingMs`: separate capsule fade-out.
+- `appDeparture.settledMs`: remaining capsule hold after departure.
+
+Save the timing file, run `omarchy restart shell`, then `chezmoi add` that file.
 
 The widget exports `mainIslandWidth` separately from the total arrival width so
 the host draws only the committed capsule; arrivals paint their own backgrounds.
@@ -53,3 +66,66 @@ Remaining apps stay visible through the animation and for one second afterward.
 An app closed before its arrival has merged fades out from its incoming capsule
 instead. Reopening the app or changing workspace cancels its pending departure.
 Stable ListModel entries give simultaneous departures independent timelines.
+
+Startup sequence: base capsule 400 ms (including its 240 ms reveal), separate
+capsule entrance 240 ms, dwell 320 ms, merge 320 ms, main capsule hold 400 ms,
+then hide 240 ms. Total 1920 ms without hover. If there are no previous app icons, skip the plain-base phase. The standalone
+capsule enters and dwells normally, then moves intact into the usual app-island
+position. No empty receiver is drawn; at the end of movement, the same visual
+becomes the main capsule without a second reveal/fade animation.
+
+## First application on an empty workspace
+
+An empty application list no longer creates a placeholder capsule. Arrivals use
+phase 2 to relocate their entire standalone capsule (including its background)
+into the main capsule's normal position. Only nonempty receivers use phase 1
+and the merging background fade. The final handoff disables the main reveal and
+width animations for that update so the visible capsule stays continuous.
+Concurrent arrivals wait for this first relocation before joining the receiver.
+Movement uses appArrival.joiningMs; entry, dwell and settled times are unchanged.
+
+## Departure ordering
+
+Closed apps are retained at the right edge before splitting. Live icons keep
+their relative order. A stable icon ListModel and Row move transition animate
+reordering when another app closes while the island is visible. Pending closes
+are ordered oldest at the far right and split sequentially; each split waits
+for its preparation timer and the latest row movement/resize to finish.
+`appDeparture.reorderingMs` controls the reorder duration. The existing
+preparation, split, fade and settled timings remain unchanged.
+
+## Icon coordinates during handoff
+
+The committed icon row is anchored to the viewport's left edge. Its clipping
+width animates independently, so inserting/removing an icon does not translate
+the remaining row. Departure captures the rendered delegate position with
+`mapToItem(root, 0, 0)` before removing it. Arrival targets use the same stable
+left-origin slot coordinates, avoiding a jump between the standalone and
+committed icon. The main viewport's existing directional entrance/exit remains.
+
+## Applications inside WezTerm
+
+`~/.config/wezterm/tabs.lua` publishes a readable `Neovim · WezTerm — …`
+window title from the active pane's foreground process. Supported applications
+are Neovim, Yazi and Codex. Only WezTerm classes accept this prefix; arbitrary
+filenames or terminal titles never decide the application identity. Unknown
+applications/shells keep their WezTerm icon. Different applications in separate
+windows get distinct identities; clicks focus the matching window.
+
+Neovim and Yazi reuse installed `nvim`/`yazi` icons. Codex remains in the Agent
+island, following the existing no-duplicate policy. Omarchy already supplies
+`/usr/share/omarchy/shell/plugins/agents/assets/codex.svg`. Returning to a shell
+is treated as an Agent exit even when the WezTerm window remains open.
+
+Herdr is always classified as Codex because it is used as an Agent workspace.
+When the active WezTerm pane's foreground process is `herdr`, its window gets
+the same Codex identity and Agent-island behavior as a direct `codex` process.
+No Herdr pane inspection, API calls, external polling or cache is involved.
+This applies to local, named-session and remote Herdr clients alike.
+
+Additional candidates: lazygit (Git), btop/htop (load graph), Claude Code and
+OpenCode (dedicated Agent identities would also need to be added).
+
+References:
+- https://wezterm.org/config/lua/PaneInformation.html
+- https://wezterm.org/config/lua/window-events/format-window-title.html

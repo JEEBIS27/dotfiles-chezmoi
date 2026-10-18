@@ -19,7 +19,7 @@ return {   -- Snacks: ユーティリティライブラリ（ダッシュボー�
             ]],
             keys = {
               { icon = "󰘔 ", key = "n", desc = "New File", action = ":ene | startinsert" },
-              { icon = "󰉋 ", key = "y", desc = "Yazi File Manager", action = ":lua Snacks.terminal('yazi')" },
+              { icon = "󰉋 ", key = "y", desc = "Yazi File Manager", action = ":Yazi" },
               { icon = "󰔟 ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
               { icon = "󰈙 ", key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
               { icon = "󰊄 ", key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },

@@ -5,20 +5,22 @@ return {
     version = "*",
     lazy = true,
     init = function()
-      local palette = require("utils.colors").palette
-      require("utils.highlight").set_highlights("nvim-notify_hl", {
-        NotifyBackground = { bg = palette.base },
-        NotifyERRORBorder = { bg = palette.base },
-        NotifyERRORBody = { bg = palette.base },
-        NotifyWARNBorder = { bg = palette.base },
-        NotifyWARNBody = { bg = palette.base },
-        NotifyINFOBorder = { bg = palette.base },
-        NotifyINFOBody = { bg = palette.base },
-        NotifyDEBUGBorder = { bg = palette.base },
-        NotifyDEBUGBody = { bg = palette.base },
-        NotifyTRACEBorder = { bg = palette.base },
-        NotifyTRACEBody = { bg = palette.base },
-      })
+      require("utils.highlight").set_highlights("nvim-notify_hl", function()
+        local palette = require("utils.colors").palette
+        return {
+          NotifyBackground = { bg = palette.base },
+          NotifyERRORBorder = { bg = palette.base },
+          NotifyERRORBody = { bg = palette.base },
+          NotifyWARNBorder = { bg = palette.base },
+          NotifyWARNBody = { bg = palette.base },
+          NotifyINFOBorder = { bg = palette.base },
+          NotifyINFOBody = { bg = palette.base },
+          NotifyDEBUGBorder = { bg = palette.base },
+          NotifyDEBUGBody = { bg = palette.base },
+          NotifyTRACEBorder = { bg = palette.base },
+          NotifyTRACEBody = { bg = palette.base },
+        }
+      end)
     end,
     opts = {
       render = "wrapped-compact",

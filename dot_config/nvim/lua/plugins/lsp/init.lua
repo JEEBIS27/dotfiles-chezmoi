@@ -29,6 +29,8 @@ return {
     opts = {
       keymap = {
         preset = "default",
+        -- Herdr reserves Ctrl+Space; standard insert-mode completion remains reachable.
+        ["<C-x><C-o>"] = { "show", "show_documentation", "hide_documentation" },
         ["<Tab>"] = {
           function(cmp)
             if not require("utils.copilot").auto_trigger_enabled() then return false end
@@ -96,17 +98,17 @@ return {
     event = { "BufReadPre", "BufWritePre", "BufNewFile" },
     dependencies = { "saghen/blink.cmp" },
     init = function()
-      local colors = require("utils.colors")
-      local palette = colors.palette
-
-      require("utils.highlight").force_set_highlights("lspconfig_hl", {
-        LspInlayHint = { link = "DiagnosticHint" },
-        -- soft diagnostic line backgrounds tuned for the current palette
-        DiagnosticErrorLine = { bg = colors.alpha_blend(palette.red, palette.base, 0.15) },
-        DiagnosticWarnLine = { bg = colors.alpha_blend(palette.peach, palette.base, 0.15) },
-        DiagnosticHintLine = { bg = colors.alpha_blend(palette.green, palette.base, 0.15) },
-        DiagnosticInfoLine = { bg = colors.alpha_blend(palette.blue, palette.base, 0.15) },
-      })
+      require("utils.highlight").force_set_highlights("lspconfig_hl", function()
+        local colors = require("utils.colors")
+        local palette = colors.palette
+        return {
+          LspInlayHint = { link = "DiagnosticHint" },
+          DiagnosticErrorLine = { bg = colors.alpha_blend(palette.red, palette.base, 0.15) },
+          DiagnosticWarnLine = { bg = colors.alpha_blend(palette.peach, palette.base, 0.15) },
+          DiagnosticHintLine = { bg = colors.alpha_blend(palette.green, palette.base, 0.15) },
+          DiagnosticInfoLine = { bg = colors.alpha_blend(palette.blue, palette.base, 0.15) },
+        }
+      end)
 
       vim.diagnostic.config({
         virtual_text = true,
@@ -210,11 +212,13 @@ return {
     dependencies = { "nvim-web-devicons", "nvim-treesitter" },
     event = { "LspAttach" },
     init = function()
-      local palette = require("utils.colors").palette
-      require("utils.highlight").set_highlights("lspsaga_hl", {
-        SagaNormal = { bg = palette.crust },
-        SagaBorder = { bg = palette.crust },
-      })
+      require("utils.highlight").set_highlights("lspsaga_hl", function()
+        local palette = require("utils.colors").palette
+        return {
+          SagaNormal = { bg = palette.crust },
+          SagaBorder = { bg = palette.crust },
+        }
+      end)
     end,
     opts = function()
       return {
@@ -247,6 +251,9 @@ return {
                 require("overlook.api").open_in_original_window()
               end, { buffer = true, desc = "Overlook: Open in original window" })
 
+              vim.keymap.set("n", "<C-S-CR>", function()
+                require("overlook.api").open_in_split()
+              end, { buffer = true, desc = "Overlook: Open below" })
               -- open in vsplit on ctrl+enter
               for _, lhs in ipairs({ "<C-CR>", ";" }) do
                 vim.keymap.set("n", lhs, function()

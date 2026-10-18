@@ -1,3 +1,4 @@
+import "../jeebis.bar/AnimationTiming.js" as Timing
 import QtQuick
 import QtQuick.Controls
 import Quickshell
@@ -32,10 +33,10 @@ BarWidget {
   property real clearProgress: clearRequested ? 1 : 0
   property real historyProgress: opened ? 1 : 0
   Behavior on historyProgress {
-    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: root.opened ? Timing.notificationHistory.enteringMs : Timing.notificationHistory.leavingMs; easing.type: Easing.OutCubic }
   }
-  readonly property color foreground: "#dcd7ba"
-  readonly property color mutedForeground: "#727169"
+  readonly property color foreground: bar ? bar.barForeground : Color.bar.text
+  readonly property color mutedForeground: Color.muted
   // A small optical correction balances this bell glyph inside the capsule.
   readonly property real bellOpticalOffsetX: -Style.spaceReal(0)
 
@@ -45,10 +46,10 @@ BarWidget {
   implicitHeight: visible ? barSize : 0
 
   Behavior on islandRevealProgress {
-    NumberAnimation { duration: 240; easing.type: Easing.InOutCubic }
+    NumberAnimation { duration: root.islandRequested ? Timing.notificationIsland.enteringMs : Timing.notificationIsland.leavingMs; easing.type: Easing.InOutCubic }
   }
   Behavior on clearProgress {
-    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: root.clearRequested ? Timing.notificationClear.enteringMs : Timing.notificationClear.leavingMs; easing.type: Easing.OutCubic }
   }
 
   HoverHandler { id: islandHover }

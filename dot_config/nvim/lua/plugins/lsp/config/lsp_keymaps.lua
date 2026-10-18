@@ -43,7 +43,7 @@ local function get_keymaps(bufnr)
     { "n", "gd", go_to_definition, desc = "Go to Definitions" },
     { "n", "K", "<cmd>Lspsaga hover_doc<CR>", desc = "Show Hover Card" },
     { "n", "gI", Snacks.picker.lsp_implementations, desc = "Go to Implementations" },
-    { { "n", "i" }, "<C-k>", vim.lsp.buf.signature_help, desc = "Show Signature Help" },
+    { { "n", "i" }, "<F2>", vim.lsp.buf.signature_help, desc = "Show Signature Help" },
     { "n", "gy", Snacks.picker.lsp_type_definitions, desc = "Go to Type Definitions" },
     { "n", "<space>cr", "<cmd>Lspsaga rename ++project<CR>", desc = "Rename Symbol" },
     { { "n", "v" }, "<space>.", "<cmd>Lspsaga code_action<CR>", desc = "Code Action" },

@@ -39,7 +39,7 @@ local function apply_stealth_statusline()
   vim.api.nvim_set_hl(0, "StatusLine", { fg = bg, bg = bg })
   vim.api.nvim_set_hl(0, "StatusLineNC", { fg = bg, bg = bg })
   vim.api.nvim_set_hl(0, "SignColumn", { bg = "none" })
-  vim.api.nvim_set_hl(0, "LineNr", { fg = "#626879", bg = "none" })
+  vim.api.nvim_set_hl(0, "LineNr", { fg = p.overlay0, bg = "none" })
   vim.api.nvim_set_hl(0, "CursorLineNr", { fg = p.blue, bg = "none" })
 end
 

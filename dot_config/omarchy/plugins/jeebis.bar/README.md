@@ -221,16 +221,30 @@ preventing the icon from disappearing and immediately returning.
 Notification hover expands only the clear button. Opening the notification panel
 also expands its history button; both changes animate independently.
 
-### Tuning hover delays
+### Animation timing
 
-Edit `interval` (milliseconds) under these timer IDs:
-- `jeebis.apps/BarWidget.qml`: `hoverExitTimer` — application island hover exit.
-- `jeebis.bar/Bar.qml`: `agentExitTimer` — Agent island hover exit.
-- `jeebis.bar/Bar.qml`: `panelGraceTimer` — Agent panel-close pointer handoff.
+All user-defined animation durations and presentation/hover delays are grouped
+in `jeebis.bar/AnimationTiming.js`. Each frozen group represents one animation;
+its abstract phase names have Japanese comments describing the concrete motion.
+All values are milliseconds. Change these constants instead of QML timer bodies.
 
-All three currently use 100 ms (0.1 s). The separate 2000 ms timers control
-automatic reveals. Plugin files hot-reload after saving. Run `chezmoi add` on
-any modified file to save the revised value in your dotfiles source.
+For example, app hover exit is `appIsland.releasingMs`, Agent hover exit is
+`agentIsland.releasingMs`, and popup-close handoff is `agentIsland.returningMs`.
+The user's existing values are preserved, including the 150 ms app hover exit.
+Agent sequencing adds `changingMs + presentMs` and `collapsingMs + settledMs`,
+so the related phases follow automatically when a component duration changes.
+
+After editing the shared file, reload all consumers and save it to Dotfiles:
+
+```bash
+omarchy restart shell
+chezmoi add ~/.config/omarchy/plugins/jeebis.bar/AnimationTiming.js
+```
+
+The file covers custom bar/plugin animations, including calendar/power panel
+content and the bar's fallback widgets. Data polling, compositor synchronization,
+system double-click timing, and installed Omarchy UI internals keep their own
+contracts; they are not presentation timing constants.
 
 The notification widget supplies `openPanelIndicatorCenterX` and
 `openPanelIndicatorWidth` so unread/history selection points to its own button.
@@ -251,3 +265,71 @@ the user's existing TUI keybinding without altering Codex permissions.
 The application section now reads mainIslandWidth and hoverTargetWidth hints.
 This preserves a hover target while hidden and keeps new-app arrival backgrounds
 separate from the main capsule until their merge completes.
+
+## Show-desktop restoration and Agent exits
+
+The apps widget keeps original workspace membership for windows parked in
+`special:desktop` by Super+D, and suppresses new-arrival detection on restoration.
+It also recognizes restoration when the shell first loaded while windows were
+parked. A genuine first app window on another workspace still gets an arrival.
+No Hyprland keybindings are modified.
+
+Agent exit playback is triggered only by actual `closewindow` events and only
+when no window of that app kind remains running. The host caches app kinds by
+window address and waits for the compositor model to confirm the close.
+The launcher expands for 400 ms, then changes the closed label to the theme's
+muted color over the normal color transition. After another 1320 ms (320 ms color transition plus 1000 ms hold) it retracts
+its buttons (320 ms), holds only the Agent icon for 400 ms, and releases the
+capsule to its existing 240 ms hide animation. Hover or an open usage panel
+still holds the island as usual. Repeated closes restart the sequence and retain
+the set of closing app kinds. Desktop hiding/restoration never triggers exit
+playback because it emits workspace moves rather than actual close events.
+
+## Agent startup/exit shared timeline
+
+First startup of ChatGPT or CLI Codex now plays the same lifecycle sequence as
+exit. Startups begin with a muted label, exits with a lit label, and switch to
+the real running state after 400 ms. Additional windows of a still-running Agent
+app and focus-only actions use the normal reveal without a false color change.
+No startup sequence is emitted for show-desktop restoration.
+
+Timeline from lifecycle trigger (milliseconds):
+- 0–400: expanded buttons; the 180 ms button reveal and 240 ms capsule reveal overlap this phase.
+- 400–720: label color transition (320 ms).
+- 720–1720: hold the updated color (1000 ms).
+- 1720–2040: retract buttons (320 ms).
+- 2040–2440: Agent icon alone (400 ms).
+- 2440–2680: hide the Agent capsule (240 ms), unless hovered or its panel is open.
+
+The playback is in jeebis.agent-launchers/BarWidget.qml, activityPlayback; edit
+its phase durations in AnimationTiming.js under agentActivity. Compound waits
+are computed from changingMs + presentMs and collapsingMs + settledMs.
+Button expansion remains 180 ms; contraction is 320 ms. Total lifecycle: 2680 ms.
+Automatic workspace reveals do not extend an active lifecycle sequence.
+
+## Load/spinner consistency and Agent-only changes
+
+The host injects the load island's real visibility into Workspaces.systemBusy,
+including its closing animation. While any high-load item is displayed, the
+workspace spinner timer runs. Existing per-workspace CPU attribution keeps
+priority. If no workspace crosses its separate busy threshold, the workspace
+with the largest measured CPU share gets a fallback spinner; when attribution is
+unavailable, the focused workspace is used. One-workspace layouts temporarily
+show that dot during high load, so the load island never lacks a spinner.
+
+The application island's window signature excludes AgentModel matches as well
+as unidentified clients, just like its application icon collection. Agent-only
+window opens/closes no longer trigger a two-second application island reveal.
+Real workspace selections and non-Agent window changes retain their behavior.
+
+## Directional companion motion
+
+The app capsule and its icon viewport enter rightward from the workspace-facing
+edge, and return leftward while hiding. A clipped viewport holds the complete
+row against its right edge as the reveal width grows, so the actual icons move
+with the capsule rather than fading outside its bounds. Only the main app
+capsule gets this horizontal offset; standalone arrival/departure icons retain
+their own geometry and timelines. Agent mirrors this motion to the left, with
+its content gap following the same reveal progress. Both hover targets remain
+at their fully expanded resting positions to prevent hover feedback loops.
+Existing AnimationTiming.js entry/exit durations are unchanged.

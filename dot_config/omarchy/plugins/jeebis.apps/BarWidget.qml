@@ -1,3 +1,4 @@
+import "../jeebis.bar/AnimationTiming.js" as Timing
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
@@ -12,14 +13,60 @@ BarWidget {
   readonly property real iconSpacing: Style.space(5)
   readonly property var appItems: collectOpenApps()
   property var displayedApps: []
+  onDisplayedAppsChanged: syncIconModel()
+  // Preserve delegates across reorders, rather than recreating a JS-array model.
+  ListModel { id: appIcons }
+  function syncIconModel() {
+    var changed = false
+    var wanted = ({})
+    for (var i = 0; i < displayedApps.length; i++)
+      wanted[displayedApps[i].identity.toLowerCase()] = true
+    for (var j = appIcons.count - 1; j >= 0; j--) {
+      if (!wanted[appIcons.get(j).appKey]) { appIcons.remove(j); changed = true }
+    }
+    for (var k = 0; k < displayedApps.length; k++) {
+      var app = displayedApps[k]
+      var key = app.identity.toLowerCase()
+      var found = -1
+      for (var n = k; n < appIcons.count; n++)
+        if (appIcons.get(n).appKey === key) { found = n; break }
+      if (found < 0) {
+        appIcons.insert(k, { appKey: key, appIdentity: app.identity, appName: app.name, appIcon: app.icon })
+        changed = true
+      } else {
+        if (found !== k) { appIcons.move(found, k, 1); changed = true }
+        appIcons.setProperty(k, "appIdentity", app.identity)
+        appIcons.setProperty(k, "appName", app.name)
+        appIcons.setProperty(k, "appIcon", app.icon)
+      }
+    }
+    // Let the positioner apply moves before any queued split captures its x.
+    if (changed) departureLayoutTimer.restart()
+  }
+  Timer {
+    id: departureLayoutTimer
+    interval: Math.max(Timing.appDeparture.reorderingMs, Timing.appDeparture.separatingMs)
+    onTriggered: Qt.callLater(root.tryStartDeparture)
+  }
+  function tryStartDeparture() {
+    if (departureLayoutTimer.running) return
+    // One split at a time; new closes can still reorder inside the main row.
+    for (var i = 0; i < departures.count; i++)
+      if (departures.get(i).phase > 0 && !departures.get(i).skipSplit) return
+    for (var j = 0; j < departures.count; j++) {
+      if (departures.get(j).phase !== 0) continue
+      var item = departureRepeater.itemAt(j)
+      if (item && item.prepared) item.startSplit()
+      return
+    }
+  }
   onAppItemsChanged: Qt.callLater(root.syncApplications)
 
   property var focusOrder: ({})
   property int focusSerial: 0
 
   function clientIdentity(client) {
-    var ipc = client.lastIpcObject || ({})
-    return String((client.wayland && client.wayland.appId) || ipc["class"] || ipc.initialClass || "").trim()
+    return AgentModel.applicationIdentity(client)
   }
 
   function addressKey(address) {
@@ -75,18 +122,22 @@ BarWidget {
 
   Timer {
     id: hoverExitTimer
-    interval: 150
+    interval: Timing.appIsland.releasingMs
     onTriggered: root.hoverExitGrace = false
   }
 
-  // Track windows, not unique app icons: another window of the same app also
-  // restarts the timer. Titles and focus changes inside a workspace do not.
+  // Track only non-Agent windows, matching the actual icon list. Another
+  // window of a listed app restarts the timer; Agent-only changes do not.
   readonly property string windowSignature: {
     var workspace = Hyprland.focusedWorkspace
     if (!workspace || !workspace.toplevels) return ""
     var clients = workspace.toplevels.values || []
     var addresses = []
-    for (var i = 0; i < clients.length; i++) addresses.push(String(clients[i].address))
+    for (var i = 0; i < clients.length; i++) {
+      var client = clients[i]
+      if (!client || AgentModel.kind(client) !== "" || !root.clientIdentity(client)) continue
+      addresses.push(String(client.address))
+    }
     addresses.sort()
     return String(workspace.id) + ":" + addresses.join(",")
   }
@@ -95,7 +146,7 @@ BarWidget {
     root.revealSerial++
     if (root.hoverHeld || root.hoverExitGrace) return
     root.revealActive = true
-    hideTimer.interval = durationMs === undefined ? 2000 : Math.max(1, Number(durationMs))
+    hideTimer.interval = durationMs === undefined ? Timing.appIsland.presentMs : Math.max(1, Number(durationMs))
     hideTimer.restart()
   }
 
@@ -107,7 +158,7 @@ BarWidget {
 
   Timer {
     id: hideTimer
-    interval: 2000
+    interval: Timing.appIsland.presentMs
     onTriggered: root.revealActive = false
   }
 
@@ -134,9 +185,10 @@ BarWidget {
     }
   }
 
-  // Stable ListModel entries keep each arrival's own one-second timer alive.
+  // Stable ListModel entries preserve each arrival's independent phase timers.
   ListModel { id: arrivals }
   property int arrivalRevision: 0
+  property bool directHandoff: false
   property int arrivalGeometryRevision: 0
   property var knownApplications: ({})
   property var awaitingApplications: ({})
@@ -148,7 +200,8 @@ BarWidget {
       var client = clients[i]
       if (!client || AgentModel.kind(client)) continue
       windows.push({ address: root.addressKey(client.address), key: root.clientIdentity(client).toLowerCase(),
-        workspaceId: client.workspace ? client.workspace.id : 0 })
+        workspaceId: client.workspace ? client.workspace.id : 0,
+        workspaceName: client.workspace ? String(client.workspace.name || "") : "" })
     }
     return windows
   }
@@ -216,7 +269,8 @@ BarWidget {
     departures.remove(index)
     departureRevision++
     updateDisplayedApps()
-    root.reveal(1000)
+    root.reveal(Timing.appDeparture.settledMs)
+    Qt.callLater(root.tryStartDeparture)
   }
   readonly property real departureExtent: {
     var revision = departureGeometryRevision
@@ -261,6 +315,17 @@ BarWidget {
       var key = eligible[n].identity.toLowerCase()
       if (!added[key]) ordered.push(eligible[n])
     }
+    // Live icons stay on the left. Oldest queued close is at the far right,
+    // so another close never takes its separation position away.
+    var arranged = []
+    for (var o = 0; o < ordered.length; o++)
+      if (departureIndex(ordered[o].identity.toLowerCase()) < 0) arranged.push(ordered[o])
+    for (var q = departures.count - 1; q >= 0; q--) {
+      var queued = departures.get(q)
+      if (queued.phase === 0)
+        arranged.push({ identity: queued.identity, name: queued.appName, icon: queued.icon })
+    }
+    ordered = arranged
     // Preserve old icons through the normal final exit animation.
     if (ordered.length > 0 || arrivals.count > 0 || departures.count > 0 || trackedWorkspaceId !== currentWorkspaceId)
       displayedApps = ordered
@@ -274,13 +339,22 @@ BarWidget {
     for (var i = 0; i < snapshot.length; i++) {
       var window = snapshot[i]
       if (!window.key) continue
+      var previousWindow = archive[window.address]
+      var parkedForDesktop = window.workspaceName === "special:desktop"
+        || (window.workspaceId < 0 && window.workspaceName === "desktop")
+      // Super+D temporarily parks windows; retain their real workspace membership.
+      var membershipId = parkedForDesktop && previousWindow && previousWindow.workspaceId > 0
+        ? previousWindow.workspaceId : window.workspaceId
+      var restoredFromDesktop = !parkedForDesktop && previousWindow && previousWindow.parkedForDesktop === true
       archive[window.address] = { address: window.address, key: window.key,
-        workspaceId: window.workspaceId, seenAt: Date.now() }
+        workspaceId: membershipId, parkedForDesktop: parkedForDesktop, seenAt: Date.now() }
       // Presence is scoped to each workspace. Another workspace's copy does
       // not suppress the arrival of this workspace's first window of the app.
-      var scopedKey = String(window.workspaceId) + ":" + window.key
+      var scopedKey = String(membershipId) + ":" + window.key
       nextApplications[scopedKey] = true
-      if (trackingReady && !knownApplications[scopedKey] && window.workspaceId === currentWorkspaceId)
+      if (restoredFromDesktop) delete newKeys[window.key]
+      if (trackingReady && !parkedForDesktop && !restoredFromDesktop
+          && !knownApplications[scopedKey] && window.workspaceId === currentWorkspaceId)
         newKeys[window.key] = Date.now()
     }
     if (trackedWorkspaceId !== currentWorkspaceId) {
@@ -322,18 +396,36 @@ BarWidget {
   }
   function beginMerge(key) {
     var index = arrivalIndex(key)
-    if (index < 0) return
-    arrivals.setProperty(index, "phase", 1)
+    if (index < 0) return false
+    // Let an empty workspace's first capsule reach its resting place before
+    // another incoming capsule tries to join it.
+    for (var i = 0; i < arrivals.count; i++)
+      if (i !== index && arrivals.get(i).phase === 2) return false
+    arrivals.setProperty(index, "phase", displayedApps.length > 0 ? 1 : 2)
     arrivalRevision++
     updateDisplayedApps()
+    return true
   }
   function finishMerge(key) {
     var index = arrivalIndex(key)
     if (index < 0) return
+    var relocated = arrivals.get(index).phase === 2
+    // A relocating capsule becomes the main capsule at the same position,
+    // without showing or fading into an empty receiver.
+    if (relocated) root.directHandoff = true
+    root.reveal(Timing.appArrival.settledMs)
     arrivals.remove(index)
     arrivalRevision++
     updateDisplayedApps()
-    root.reveal(1000)
+    if (relocated) Qt.callLater(function() { root.directHandoff = false })
+  }
+  function renderedIconX(key) {
+    for (var i = 0; i < appIcons.count; i++) {
+      if (appIcons.get(i).appKey !== key) continue
+      var item = iconRepeater.itemAt(i)
+      if (item) return item.mapToItem(root, 0, 0).x
+    }
+    return targetX(key)
   }
   function targetX(key) {
     for (var i = 0; i < displayedApps.length; i++)
@@ -354,9 +446,11 @@ BarWidget {
   readonly property bool islandRequested: !vertical
     && (revealActive || hoverHeld || hoverExitGrace || arrivals.count > 0 || departures.count > 0) && mainAppCount > 0
   property real islandRevealProgress: islandRequested ? 1 : 0
+  // An empty app list has no receiver capsule; the first arrival moves alone.
   property real contentWidth: displayedApps.length * Style.bar.iconSlot
     + Math.max(0, displayedApps.length - 1) * iconSpacing
   readonly property real mainIslandWidth: contentWidth * islandRevealProgress
+  readonly property real mainIslandOffsetX: -Style.space(16) * (1 - islandRevealProgress)
   readonly property real arrivalExtent: {
     var revision = arrivalGeometryRevision
     var count = arrivalRepeater.count
@@ -378,10 +472,13 @@ BarWidget {
   implicitHeight: visible ? barSize : 0
 
   Behavior on islandRevealProgress {
-    NumberAnimation { duration: 240; easing.type: Easing.InOutCubic }
+    enabled: !root.directHandoff
+    NumberAnimation { duration: root.islandRequested ? Timing.appIsland.enteringMs : Timing.appIsland.leavingMs; easing.type: Easing.InOutCubic }
   }
   Behavior on contentWidth {
-    NumberAnimation { duration: arrivals.count > 0 || departures.count > 0 ? 320 : 180; easing.type: Easing.InOutCubic }
+    enabled: !root.directHandoff
+    NumberAnimation { duration: arrivals.count > 0 ? Timing.appArrival.joiningMs
+        : departures.count > 0 ? Timing.appDeparture.separatingMs : Timing.appIsland.resizingMs; easing.type: Easing.InOutCubic }
   }
 
   function desktopEntryForClient(identity, title) {
@@ -426,9 +523,12 @@ BarWidget {
       if (seen[key]) continue
       seen[key] = true
 
-      var entry = root.desktopEntryForClient(identity, client.title)
-      var icon = entry && entry.icon ? String(entry.icon) : identity
-      var name = entry && entry.name ? String(entry.name) : String(client.title || identity)
+      var terminalApp = AgentModel.terminalApplication(client)
+      var entry = terminalApp ? null : root.desktopEntryForClient(identity, client.title)
+      var terminalIcons = { nvim: "nvim", yazi: "yazi" }
+      var terminalNames = { nvim: "Neovim", yazi: "Yazi" }
+      var icon = terminalApp ? terminalIcons[terminalApp] : entry && entry.icon ? String(entry.icon) : identity
+      var name = terminalApp ? terminalNames[terminalApp] : entry && entry.name ? String(entry.name) : String(client.title || identity)
 
       result.push({
         identity: identity,
@@ -441,43 +541,62 @@ BarWidget {
   }
 
   function iconSource(icon) {
-    return Quickshell.iconPath(String(icon || "application-x-executable"), true)
+    var value = String(icon || "application-x-executable")
+    return value.indexOf("file:") === 0 || value.charAt(0) === "/" ? value : Quickshell.iconPath(value, true)
   }
 
-  Row {
-    anchors.left: parent.left
+  // Reveal only the main row from the workspace-facing edge. Incoming and
+  // departing standalone capsules stay outside this clipped viewport.
+  Item {
+    id: appViewport
+    x: root.mainIslandOffsetX
     anchors.verticalCenter: parent.verticalCenter
-    spacing: root.iconSpacing
-    opacity: root.islandRevealProgress
-    scale: 0.9 + 0.1 * root.islandRevealProgress
-    transformOrigin: Item.Left
-    Repeater {
-      model: root.displayedApps
-      WidgetButton {
-        required property var modelData
-        readonly property bool pending: root.isPending(modelData.identity)
-        bar: root.bar
-        text: ""
-        labelVisible: false
-        hasVisualContent: true
-        interactive: !pending && root.departureIndex(modelData.identity.toLowerCase()) < 0
-        tooltipText: modelData.name
-        onPressed: function(button) {
-          if (button === Qt.LeftButton) root.focusApp(modelData.identity)
-        }
-        fixedWidth: Style.bar.iconSlot
-        fixedHeight: root.barSize
-        horizontalMargin: 0
-        verticalPadding: 0
-        Image {
-          anchors.centerIn: parent
-          width: Style.bar.iconCanvas
-          height: Style.bar.iconCanvas
-          source: root.iconSource(modelData.icon)
-          visible: !parent.pending
-          fillMode: Image.PreserveAspectFit
-          smooth: true
-          mipmap: true
+    width: root.mainIslandWidth
+    height: root.barSize
+    clip: true
+    Row {
+      id: iconRow
+      // Keep icon coordinates fixed while the receiver's width is animated.
+      // Right anchoring displaced the entire row during merges and splits.
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: root.iconSpacing
+      opacity: root.islandRevealProgress
+      move: Transition {
+        enabled: root.islandRevealProgress > 0.99
+        NumberAnimation { properties: "x,y"; duration: Timing.appDeparture.reorderingMs; easing.type: Easing.InOutCubic }
+      }
+      Repeater {
+        id: iconRepeater
+        model: appIcons
+        WidgetButton {
+          required property string appIdentity
+          required property string appName
+          required property string appIcon
+          readonly property bool pending: root.isPending(appIdentity)
+          bar: root.bar
+          text: ""
+          labelVisible: false
+          hasVisualContent: true
+          interactive: !pending && root.departureIndex(appIdentity.toLowerCase()) < 0
+          tooltipText: appName
+          onPressed: function(button) {
+            if (button === Qt.LeftButton) root.focusApp(appIdentity)
+          }
+          fixedWidth: Style.bar.iconSlot
+          fixedHeight: root.barSize
+          horizontalMargin: 0
+          verticalPadding: 0
+          Image {
+            anchors.centerIn: parent
+            width: Style.bar.iconCanvas
+            height: Style.bar.iconCanvas
+            source: root.iconSource(appIcon)
+            visible: !parent.pending
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            mipmap: true
+          }
         }
       }
     }
@@ -499,23 +618,40 @@ BarWidget {
       property real mergeProgress: 0
       property real entryProgress: 0
       property real mergeStartX: 0
-      readonly property real restingX: (root.mainIslandWidth > 0 ? root.mainIslandWidth + Style.space(16) : 0)
+      readonly property real restingX: (root.mainIslandWidth > 0 ? root.mainIslandWidth + Style.space(16) : Style.space(16))
         + index * (Style.bar.iconSlot + Style.space(16))
-      x: phase === 1 ? mergeStartX + (root.targetX(appKey) - mergeStartX) * mergeProgress : restingX
+      x: phase > 0 ? mergeStartX + ((phase === 2 ? 0 : root.targetX(appKey)) - mergeStartX) * mergeProgress
+        : restingX + Style.space(8) * (1 - entryProgress)
       width: Style.bar.iconSlot
       height: root.barSize
       anchors.verticalCenter: parent.verticalCenter
       opacity: entryProgress
       z: 5
-      Component.onCompleted: { entryAnimation.start(); dwell.start() }
-      NumberAnimation { id: entryAnimation; target: arrival; property: "entryProgress"; to: 1; duration: 180; easing.type: Easing.OutCubic }
+      Component.onCompleted: {
+        if (root.displayedApps.length > 0) showBaseFirst.start()
+        else entryAnimation.start()
+      }
+      Timer {
+        id: showBaseFirst
+        interval: Timing.appArrival.preparingMs
+        onTriggered: entryAnimation.start()
+      }
+      NumberAnimation {
+        id: entryAnimation
+        target: arrival
+        property: "entryProgress"
+        to: 1
+        duration: Timing.appArrival.enteringMs
+        easing.type: Easing.OutCubic
+        onFinished: dwell.start()
+      }
       Timer {
         id: dwell
-        interval: 1000
+        interval: Timing.appArrival.presentMs
         onTriggered: {
           arrival.mergeStartX = arrival.x
-          root.beginMerge(arrival.appKey)
-          mergeAnimation.start()
+          if (root.beginMerge(arrival.appKey)) mergeAnimation.start()
+          else dwell.restart()
         }
       }
       NumberAnimation {
@@ -523,7 +659,7 @@ BarWidget {
         target: arrival
         property: "mergeProgress"
         to: 1
-        duration: 320
+        duration: Timing.appArrival.joiningMs
         easing.type: Easing.InOutCubic
         onFinished: root.finishMerge(arrival.appKey)
       }
@@ -536,7 +672,7 @@ BarWidget {
         color: root.bar ? Qt.rgba(root.bar.background.r, root.bar.background.g, root.bar.background.b, 0.94) : Color.background
         border.width: 1
         border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.22)
-        opacity: 1 - arrival.mergeProgress
+        opacity: arrival.phase === 2 ? 1 : 1 - arrival.mergeProgress
       }
       WidgetButton {
         anchors.fill: parent
@@ -579,6 +715,17 @@ BarWidget {
       required property bool skipSplit
       required property real initialX
       required property real initialOpacity
+      property bool prepared: false
+      function startSplit() {
+        if (phase !== 0) return
+        // Capture the rendered position before removing the original delegate.
+        startX = root.renderedIconX(appKey)
+        root.beginDeparture(appKey)
+        var remainingWidth = root.displayedApps.length * Style.bar.iconSlot
+          + Math.max(0, root.displayedApps.length - 1) * root.iconSpacing
+        endX = Math.max(remainingWidth, root.arrivalExtent) + Style.space(16)
+        splitAnimation.start()
+      }
       property real splitProgress: 0
       property real lifeOpacity: initialOpacity
       property real startX: initialX
@@ -597,15 +744,10 @@ BarWidget {
       }
       Timer {
         id: showBeforeSplit
-        interval: 400
+        interval: Timing.appDeparture.preparingMs
         onTriggered: {
-          departure.startX = root.targetX(departure.appKey)
-          root.beginDeparture(departure.appKey)
-          var remainingWidth = root.displayedApps.length * Style.bar.iconSlot
-            + Math.max(0, root.displayedApps.length - 1) * root.iconSpacing
-          departure.endX = Math.max(remainingWidth, root.arrivalExtent) + Style.space(16)
-            + departure.index * (Style.bar.iconSlot + Style.space(16))
-          splitAnimation.start()
+          departure.prepared = true
+          root.tryStartDeparture()
         }
       }
       NumberAnimation {
@@ -613,7 +755,7 @@ BarWidget {
         target: departure
         property: "splitProgress"
         to: 1
-        duration: 320
+        duration: Timing.appDeparture.separatingMs
         easing.type: Easing.InOutCubic
         onFinished: fadeOut.start()
       }
@@ -622,7 +764,7 @@ BarWidget {
         target: departure
         property: "lifeOpacity"
         to: 0
-        duration: 240
+        duration: Timing.appDeparture.leavingMs
         easing.type: Easing.InCubic
         onFinished: {
           var key = departure.appKey

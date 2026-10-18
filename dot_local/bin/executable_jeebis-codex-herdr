@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+
+# Herdr invokes $SHELL for each pane. Start Codex once per dedicated server;
+# additional panes and the shell after Codex exits use the normal login shell.
+if [[ ${HERDR_ENV:-} == 1 && -n ${JEEBIS_CODEX_LOGIN_SHELL:-} ]]; then
+  export SHELL="$JEEBIS_CODEX_LOGIN_SHELL"
+  server_start=$(awk '{print $22}' "/proc/$PPID/stat")
+  marker="${XDG_RUNTIME_DIR:?}/jeebis-codex-herdr/$PPID-$server_start"
+  mkdir -p "${marker%/*}"
+  if mkdir "$marker" 2>/dev/null; then
+    codex || true
+  fi
+  exec "$SHELL" -l
+fi
+
+export JEEBIS_CODEX_LOGIN_SHELL="${SHELL:-/usr/bin/zsh}"
+export SHELL=/home/jeebis/.local/bin/jeebis-codex-herdr
+exec herdr --session codex

@@ -1,0 +1,11 @@
+{{- $p := includeTemplate "profile" . | fromJson -}}
+{{ if and $p.settings $p.fonts -}}
+#!/bin/sh
+set -eu
+{{ range $file := list "HackGen35ConsoleNF-Bold.ttf" "HackGen35ConsoleNF-Regular.ttf" "HackGenConsoleNF-Bold.ttf" "HackGenConsoleNF-Regular.ttf" -}}
+# {{ $file }}: {{ include (joinPath "dot_local/share/fonts/HackGen" $file) | sha256sum }}
+{{ end -}}
+if command -v fc-cache >/dev/null 2>&1; then
+  fc-cache -f "$HOME/.local/share/fonts/HackGen"
+fi
+{{ end -}}

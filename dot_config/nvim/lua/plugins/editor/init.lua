@@ -7,7 +7,7 @@ return {
     config = function()
       require("toggleterm").setup({
         size = 16,  -- ターミナルの高さ
-        open_mapping = [[<C-z>]],  -- VSCode風: Ctrl+zで開く
+        open_mapping = [[<C-t>]],  -- Shared application-layer floating terminal
         hide_numbers = true,
         shade_filetypes = {},
         shade_terminals = true,
@@ -36,8 +36,7 @@ return {
 
       -- ターミナルモードでのキーマップ
       local opts = { noremap = true }
-      vim.keymap.set('t', '<C-z>', '<C-z><C-n>', opts)  -- <Esc>の代わりに使用可能
-      vim.keymap.set('t', '<C-w>', '<C-z><C-n><C-w>', opts)  -- ウィンドウ操作
+      vim.keymap.set('t', '<F4>', '<C-\\><C-n>', opts)  -- <Esc>の代わりに使用可能
     end,
   },
 

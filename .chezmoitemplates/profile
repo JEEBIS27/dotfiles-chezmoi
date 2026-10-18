@@ -1,0 +1,12 @@
+{{- /* Per-machine data stays outside the Git source tree. Defaults reproduce the personal configuration; explicit exclusions win. */ -}}
+{{- $p := dict "version" 1 "settings" true "packages" true "omarchy" true "personalize" true "japanese" true "bar" true "hyprland" true "cli" true "neovim" true "ghostty" false "files" true "aur" false "latex" true "rclone" true "change_shell" true "downloads" true "fonts" true "mozkey" true "rustup" true "vscode" true "wezterm" true "mime" true "cloud_mounts" false "linger" false "neovim_latest" false "git_name" .chezmoi.username "git_email" "" -}}
+{{- $configHome := env "XDG_CONFIG_HOME" | default (joinPath .chezmoi.homeDir ".config") -}}
+{{- $path := env "DOTFILES_PROFILE" | default (joinPath $configHome "chezmoi" "dotfiles.json") -}}
+{{- if stat $path -}}
+{{- $p = mergeOverwrite $p (include $path | fromJson) -}}
+{{- end -}}
+{{- if ne (int $p.version) 1 -}}{{- fail "Unsupported dotfiles profile version" -}}{{- end -}}
+{{- range $key := list "settings" "packages" "omarchy" "personalize" "japanese" "bar" "hyprland" "cli" "neovim" "ghostty" "files" "aur" "latex" "rclone" "change_shell" "downloads" "fonts" "mozkey" "rustup" "vscode" "wezterm" "mime" "cloud_mounts" "linger" "neovim_latest" -}}
+{{- if not (kindIs "bool" (index $p $key)) -}}{{- fail (printf "dotfiles profile: %s must be boolean" $key) -}}{{- end -}}
+{{- end -}}
+{{- $p | toJson -}}

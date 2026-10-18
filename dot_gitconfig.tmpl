@@ -1,0 +1,19 @@
+{{- $p := includeTemplate "profile" . | fromJson -}}
+[user]
+    name = {{ $p.git_name | toJson }}
+{{ if $p.git_email }}    email = {{ $p.git_email | toJson }}
+{{ end }}[pager]
+    diff = delta
+    log = delta
+    reflog = delta
+    show = delta
+[include]
+    path = ~/.config/delta/themes.gitconfig
+[delta]
+    syntax-theme = kanagawa_wave
+    keep-plus-minus-markers = false
+    side-by-side = true
+    line-numbers = true
+    navigate = true
+[interactive]
+    diffFilter = delta --color-only

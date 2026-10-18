@@ -1,6 +1,7 @@
 export FZF_DEFAULT_OPTS='
     --style full
     --reverse
+    --bind ctrl-w:abort
     --border --padding 1,2
     --input-label " Input "
     --prompt "❯ "
@@ -12,17 +13,9 @@ export FZF_DEFAULT_OPTS='
         fi
         '\''
     --bind '\''focus:transform-preview-label:[[ -n {} ]] && printf " Previewing [%s] " {}'\''
-    --bind '\''ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)'\''
     --bind '\''pgup:preview-half-page-up,pgdn:preview-half-page-down'\''
     --bind '\''shift-up:preview-up,shift-down:preview-down'\''
     --bind '\''ctrl-up:page-up,ctrl-down:page-down'\''
-    --bind '\''alt-up:preview-half-page-up,alt-down:preview-half-page-down'\''
-    --bind '\''alt-shift-up:preview-page-up,alt-shift-down:preview-page-down'\''
-    --color "border:#aaaaaa,label:#cccccc"
-    --color "preview-border:#9999cc,preview-label:#ccccff"
-    --color "list-border:#669966,list-label:#99cc99"
-    --color "input-border:#996666,input-label:#ffcccc"
-    --color "header-border:#6699cc,header-label:#99ccff"
     '
 
 export FZF_FILE_PREVIEW='--header-label " File Type " --border-label " File " --preview "bat --color=always {}" --bind '\''focus:+transform-header:file --brief {} || echo "No file selected"'\'''

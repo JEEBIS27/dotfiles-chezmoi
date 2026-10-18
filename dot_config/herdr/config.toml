@@ -1,0 +1,109 @@
+onboarding = false
+# Direct keys: Super desktop / Ctrl+Alt WezTerm / Alt Herdr / Ctrl editor.
+# tmux session -> herdr workspace, tmux window -> herdr tab, tmux pane -> herdr pane
+
+[theme]
+# tmux ran on the terminal's own palette (bg=default, fg=default, ANSI blue accents)
+name = "terminal"
+
+[theme.custom]
+# The active tab is drawn as panel_bg text on an accent background, so panel_bg
+# has to be dark for it to read - same colors as status-left's "#[fg=black,bg=blue]"
+panel_bg = "black"
+
+[terminal]
+# Matches -c "#{pane_current_path}" on every split, window, and session
+new_cwd = "follow"
+
+# Only exchange uses a prefix; all regular actions are direct keys.
+[keys]
+# Alt owns the multiplexer layer. Alt+E enters one-shot exchange mode.
+prefix = "alt+e"
+help = "alt+/"
+settings = "alt+comma"
+reload_config = "alt+shift+comma"
+detach = "alt+d"
+copy_mode = "alt+shift+y"
+workspace_picker = "alt+g"
+goto = "alt+p"
+open_notification_target = "alt+o"
+edit_scrollback = "alt+shift+e"
+split_horizontal = "alt+shift+enter"
+split_vertical = "alt+enter"
+close_pane = "alt+w"
+zoom = "alt+shift+f"
+last_pane = "alt+semicolon"
+resize_mode = ""
+rename_pane = "alt+shift+p"
+cycle_pane_next = ""
+cycle_pane_previous = ""
+new_tab = "alt+n"
+rename_tab = "alt+r"
+close_tab = "alt+shift+w"
+switch_tab = "alt+1..9"
+previous_tab = ["alt+shift+tab", "alt+f5", "alt+f9"]
+next_tab = ["alt+tab", "alt+f6"]
+move_tab_previous = "prefix+f5"
+move_tab_next = "prefix+f6"
+new_workspace = "alt+shift+n"
+rename_workspace = "alt+shift+r"
+close_workspace = "alt+shift+d"
+previous_workspace = "alt+f7"
+next_workspace = "alt+f8"
+new_worktree = "alt+shift+g"
+toggle_sidebar = "alt+b"
+focus_pane_left = ["alt+h", "alt+left"]
+resize_pane_left = ["alt+shift+h", "alt+shift+left"]
+focus_pane_down = ["alt+j", "alt+down"]
+resize_pane_down = ["alt+shift+j", "alt+shift+down"]
+focus_pane_up = ["alt+k", "alt+up"]
+resize_pane_up = ["alt+shift+k", "alt+shift+up"]
+focus_pane_right = ["alt+l", "alt+right"]
+resize_pane_right = ["alt+shift+l", "alt+shift+right"]
+
+swap_pane_left = ["prefix+h", "prefix+left"]
+swap_pane_down = ["prefix+j", "prefix+down"]
+swap_pane_up = ["prefix+k", "prefix+up"]
+swap_pane_right = ["prefix+l", "prefix+right"]
+
+[[keys.command]]
+key = "alt+y"
+type = "pane"
+command = "zsh -i -c y"
+
+[[keys.command]]
+key = "alt+t"
+type = "popup"
+command = "HERDR_SCRATCH_POPUP=1 zsh -i"
+width = "80%"
+height = "80%"
+
+[ui]
+accent = "blue"
+
+# tmux drew single-line dividers between adjacent panes and no outer frame
+pane_gaps = false
+pane_outer_borders = false
+
+# tmux had no scrollbar column beside its panes
+pane_scrollbars = false
+
+# kill-window and kill-session never asked
+confirm_close = false
+
+# automatic-rename gave windows a name without prompting
+prompt_new_tab_name = false
+
+# set -g mouse on
+mouse_capture = true
+
+# status-right had the zoom flag followed by #h
+tab_bar_right = [{ type = "zoom" }, { type = "hostname" }]
+
+# set -g set-titles on / set -g set-titles-string '#h:#W', where tmux's #W was
+# the basename of the pane cwd. This is what Hyprland shows in the group bar,
+# and it resolves on the server so remote sessions name the remote host.
+window_title = "{hostname}: {workspace}"
+status_indicators = "dots"
+show_agent_labels_on_pane_borders = true
+agent_panel_sort = "priority"

@@ -1,191 +1,171 @@
 local wezterm = require("wezterm")
 local act = wezterm.action
 
--- Show which key table is active in the status area
-wezterm.on("update-right-status", function(window, pane)
-  local name = window:active_key_table()
-  if name then
-    name = "TABLE: " .. name
+local is_windows = wezterm.target_triple:find("windows", 1, true) ~= nil
+
+-- Store opacity per window and preserve theme/other runtime overrides.
+local opacity_states = {
+  { opacity = 1.0, backdrop = "Tabbed" },
+  { opacity = 0.75, backdrop = "Acrylic" },
+  { opacity = 0.5, backdrop = "Disable" },
+}
+local opacity_before_transparent = {}
+local function toggle_opacity(window, transparent)
+  local overrides = window:get_config_overrides() or {}
+  local opacity = window:effective_config().window_background_opacity
+  local current = opacity <= 0.5 and 3 or (opacity < 1 and 2 or 1)
+  local id = window:window_id()
+  local next_index
+  if transparent then
+    if current == 3 then
+      next_index = opacity_before_transparent[id] or 1
+    else
+      opacity_before_transparent[id] = current
+      next_index = 3
+    end
+  else
+    next_index = current == 1 and 2 or 1
+    opacity_before_transparent[id] = next_index
   end
-  window:set_right_status(name or "")
+  local state = opacity_states[next_index]
+  overrides.window_background_opacity = state.opacity
+  if is_windows then overrides.win32_system_backdrop = state.backdrop end
+  window:set_config_overrides(overrides)
+end
+
+
+local select_exchange
+local keys = {}
+local M = "CTRL|ALT"
+local function bind(key, mods, action)
+  keys[#keys + 1] = { key = key, mods = mods, action = action }
+end
+local function prompt(description, callback)
+  return act.PromptInputLine({ description = description,
+    action = wezterm.action_callback(function(window, pane, text)
+      if text and text ~= "" then callback(window, pane, text) end
+    end) })
+end
+local rename_workspace = prompt("Rename workspace:", function(_, _, text)
+  wezterm.mux.rename_workspace(wezterm.mux.get_active_workspace(), text)
 end)
-
-return {
-  keys = {
-    {
-      -- workspaceの切り替え
-      key = "w",
-      mods = "LEADER",
-      action = act.ShowLauncherArgs({ flags = "WORKSPACES", title = "Select workspace" }),
-    },
-    {
-      --workspaceの名前変更
-      key = "$",
-      mods = "LEADER",
-      action = act.PromptInputLine({
-        description = "(wezterm) Set workspace title:",
-        action = wezterm.action_callback(function(win, pane, line)
-          if line then
-            wezterm.mux.rename_workspace(wezterm.mux.get_active_workspace(), line)
-          end
-        end),
-      }),
-    },
-    {
-      key = "W",
-      mods = "LEADER|SHIFT",
-      action = act.PromptInputLine({
-        description = "(wezterm) Create new workspace:",
-        action = wezterm.action_callback(function(window, pane, line)
-          if line then
-            window:perform_action(
-              act.SwitchToWorkspace({
-                name = line,
-              }),
-              pane
-            )
-          end
-        end),
-      }),
-    },
-    -- Tab移動
-    { key = "Tab", mods = "CTRL", action = act.ActivateTabRelative(1) },
-    { key = "Tab", mods = "SHIFT|CTRL", action = act.ActivateTabRelative(-1) },
-    -- Tab入れ替え
-    { key = "{", mods = "LEADER", action = act({ MoveTabRelative = -1 }) },
-    -- Tab新規作成
-    { key = "t", mods = "CTRL", action = act.SpawnCommandInNewTab({ domain = "CurrentPaneDomain", cwd = "~" }) },
-    -- Tabを閉じる
-    { key = "w", mods = "CTRL|SHIFT", action = act({ CloseCurrentTab = { confirm = true } }) },
-
-    -- コピーモード
-    { key = 'x', mods = 'CTRL|SHIFT', action = act.ActivateKeyTable{ name = 'copy_mode', one_shot =false }, },
-    { key = "x", mods = "CTRL|SHIFT", action = act.ActivateCopyMode },
-    -- コピー
-    { key = "c", mods = "CTRL|SHIFT", action = act.CopyTo("Clipboard") },
-    -- 貼り付け
-    { key = "v", mods = "CTRL|SHIFT", action = act.PasteFrom("Clipboard") },
-
-    -- Pane作成 leader + \ or /
-    { key = "\\", mods = "CTRL|ALT", action = act.SplitVertical({ domain = "CurrentPaneDomain", cwd = "~" }) },
-    { key = "/", mods = "CTRL|ALT", action = act.SplitPane({ direction = "Right", size = { Percent = 50 }, command = { domain = "CurrentPaneDomain", cwd = "~" } }) },
-    -- AI Chat を開始する Ctrl+Shift+i
-    { key = "i", mods = "CTRL|SHIFT", action = act.SplitPane({ direction = "Right", size = { Percent = 33 }, command = { args = { "zsh", "-i", "-c", "chat" }, domain = "CurrentPaneDomain", cwd = "~" } }) },
-    -- Paneを閉じる leader + x
-    { key = "w", mods = "CTRL", action = act({ CloseCurrentPane = { confirm = true } }) },
-    -- Pane移動 leader + hlkj
-    { key = "LeftArrow", mods = "CTRL|ALT", action = act.ActivatePaneDirection("Left") },
-    { key = "RightArrow", mods = "CTRL|ALT", action = act.ActivatePaneDirection("Right") },
-    { key = "UpArrow", mods = "CTRL|ALT", action = act.ActivatePaneDirection("Up") },
-    { key = "DownArrow", mods = "CTRL|ALT", action = act.ActivatePaneDirection("Down") },
-    -- Pane選択・入れ替え（2ペインなら即入れ替え、3つ以上なら番号選択）
-    {
-      key = "+",
-      mods = "CTRL|ALT|SHIFT",
-      action = wezterm.action_callback(function(window, pane)
-        local panes = window:active_tab():panes()
-        if #panes <= 2 then
-          window:perform_action(wezterm.action.RotatePanes("Clockwise"), pane)
-        else
-          window:perform_action(act.PaneSelect({ mode = "SwapWithActive", alphabet = "1234567890" }), pane)
-        end
-      end),
-    },
-    -- Paneサイズ変更
-    { key = "=", mods = "CTRL|ALT", action = act.ActivateKeyTable({ name = "resize_pane", one_shot = false }) },
-
-    -- フォントサイズ切替
-    { key = "=", mods = "CTRL", action = act.IncreaseFontSize },
-    { key = "-", mods = "CTRL", action = act.DecreaseFontSize },
-    -- フォントサイズのリセット
-    { key = "0", mods = "CTRL", action = act.ResetFontSize },
-
-    -- 背景透過度トグル Alt+o (完全透明 ↔ 前の状態)
-    {
-      key = "o",
-      mods = "ALT",
-      action = wezterm.action_callback(function(win, pane)
-        if CURRENT_OPACITY_INDEX == 3 then
-          -- 完全透明から前の状態に戻す
-          CURRENT_OPACITY_INDEX = STATE_BEFORE_FULL_TRANSPARENT
-        else
-          -- 前の状態を記録して完全透明に
-          STATE_BEFORE_FULL_TRANSPARENT = CURRENT_OPACITY_INDEX
-          CURRENT_OPACITY_INDEX = 3
-        end
-        local state = OPACITY_STATES[CURRENT_OPACITY_INDEX]
-        win:set_config_overrides({
-          window_background_opacity = state.opacity,
-          win32_system_backdrop = state.backdrop
-        })
-      end),
-    },
-
-    -- 背景透過度トグル Alt+Shift+o (非透明 ↔ 半透明)
-    {
-      key = "o",
-      mods = "ALT|SHIFT",
-      action = wezterm.action_callback(function(win, pane)
-        if CURRENT_OPACITY_INDEX == 1 then
-          CURRENT_OPACITY_INDEX = 2  -- 半透明から非透明へ
-        else
-          CURRENT_OPACITY_INDEX = 1  -- 非透明から半透明へ
-        end
-        STATE_BEFORE_FULL_TRANSPARENT = CURRENT_OPACITY_INDEX
-        local state = OPACITY_STATES[CURRENT_OPACITY_INDEX]
-        win:set_config_overrides({
-          window_background_opacity = state.opacity,
-          win32_system_backdrop = state.backdrop
-        })
-      end),
-    },
-    -- テーマ切り替え Alt+t
-    { key = "t", mods = "ALT", action = act.EmitEvent("theme-toggle") },
-    -- 現在テーマ表示 Alt+Shift+t
-    { key = "t", mods = "ALT|SHIFT", action = act.EmitEvent("theme-show") },
-
-    -- タブ切替 Alt + 数字
-    { key = "1", mods = "ALT", action = act.ActivateTab(0) },
-    { key = "2", mods = "ALT", action = act.ActivateTab(1) },
-    { key = "3", mods = "ALT", action = act.ActivateTab(2) },
-    { key = "4", mods = "ALT", action = act.ActivateTab(3) },
-    { key = "5", mods = "ALT", action = act.ActivateTab(4) },
-    { key = "6", mods = "ALT", action = act.ActivateTab(5) },
-    { key = "7", mods = "ALT", action = act.ActivateTab(6) },
-    { key = "8", mods = "ALT", action = act.ActivateTab(7) },
-    { key = "9", mods = "ALT", action = act.ActivateTab(-1) },
-
-    -- 設定再読み込み
-    { key = "r", mods = "SHIFT|CTRL", action = act.ReloadConfiguration },
-  },
-  -- キーテーブル
-  -- https://wezfurlong.org/wezterm/config/key-tables.html
-  key_tables = {
-    -- Paneサイズ調整 leader + s
-    resize_pane = {
-      { key = "LeftArrow",  action = act.AdjustPaneSize({ "Left", 1 }) },
-      { key = "RightArrow", action = act.AdjustPaneSize({ "Right", 1 }) },
-      { key = "UpArrow",    action = act.AdjustPaneSize({ "Up", 1 }) },
-      { key = "DownArrow",  action = act.AdjustPaneSize({ "Down", 1 }) },
-      { key = "h", action = act.AdjustPaneSize({ "Left", 1 }) },
-      { key = "l", action = act.AdjustPaneSize({ "Right", 1 }) },
-      { key = "k", action = act.AdjustPaneSize({ "Up", 1 }) },
-      { key = "j", action = act.AdjustPaneSize({ "Down", 1 }) },
-
-      -- Cancel the mode by pressing escape
-      { key = "Enter", action = "PopKeyTable" },
-    },
-    activate_pane = {
-      { key = "LeftArrow",  action = act.ActivatePaneDirection("Left") },
-      { key = "RightArrow", action = act.ActivatePaneDirection("Right") },
-      { key = "UpArrow",    action = act.ActivatePaneDirection("Up") },
-      { key = "DownArrow",  action = act.ActivatePaneDirection("Down") },
-      { key = "h", action = act.ActivatePaneDirection("Left") },
-      { key = "l", action = act.ActivatePaneDirection("Right") },
-      { key = "k", action = act.ActivatePaneDirection("Up") },
-      { key = "j", action = act.ActivatePaneDirection("Down") },
-    },
-    -- copyモード Ctrl+Shift+X
+local new_workspace = prompt("New workspace:", function(window, pane, text)
+  window:perform_action(act.SwitchToWorkspace({ name = text }), pane)
+end)
+local rename_tab = prompt("Rename tab:", function(_, pane, text)
+  pane:tab():set_title(text)
+end)
+local function tool(args)
+  return wezterm.action_callback(function(window, pane)
+    if is_windows and not pane:get_domain_name():match("^WSL:") then
+      window:toast_notification("WezTerm", "Use a Linux/WSL pane for this command.", nil, 3000)
+      return
+    end
+    window:perform_action(act.SplitPane({ direction = "Right", size = { Percent = 33 },
+      command = { args = args, domain = "CurrentPaneDomain" } }), pane)
+  end)
+end
+bind("Insert", "CTRL", act.CopyTo("Clipboard"))
+bind("Insert", "SHIFT", act.PasteFrom("Clipboard"))
+-- Preserve the conventional clipboard aliases and TUI Shift+Enter.
+bind("c", "CTRL|SHIFT", act.CopyTo("Clipboard"))
+bind("v", "CTRL|SHIFT", act.PasteFrom("Clipboard"))
+bind("Enter", "SHIFT", act.SendString("\x1b[13;2u"))
+for _, item in ipairs({
+  { "h", "LeftArrow", "Left" }, { "j", "DownArrow", "Down" },
+  { "k", "UpArrow", "Up" }, { "l", "RightArrow", "Right" },
+}) do
+  for _, key in ipairs({ item[1], item[2] }) do
+    bind(key, M, act.ActivatePaneDirection(item[3]))
+    bind(key, M .. "|SHIFT", act.AdjustPaneSize({ item[3], 5 }))
+  end
+end
+bind("Enter", M, act.SplitHorizontal({ domain = "CurrentPaneDomain" }))
+bind("Enter", M .. "|SHIFT", act.SplitVertical({ domain = "CurrentPaneDomain" }))
+bind("f", M .. "|SHIFT", act.TogglePaneZoomState)
+bind("w", M, act.CloseCurrentPane({ confirm = true }))
+bind("w", M .. "|SHIFT", act.CloseCurrentTab({ confirm = true }))
+bind("n", M, act.SpawnCommandInNewTab({ domain = "CurrentPaneDomain" }))
+bind("r", M, rename_tab)
+bind("Tab", M, act.ActivateTabRelative(1))
+bind("Tab", M .. "|SHIFT", act.ActivateTabRelative(-1))
+bind("PageUp", M, act.ActivateTabRelative(-1))
+bind("PageDown", M, act.ActivateTabRelative(1))
+bind("PageUp", M .. "|SHIFT", act.SwitchWorkspaceRelative(-1))
+bind("PageDown", M .. "|SHIFT", act.SwitchWorkspaceRelative(1))
+for i = 1, 9 do bind(tostring(i), M, act.ActivateTab(i - 1)) end
+bind("g", M, act.ShowLauncherArgs({ flags = "WORKSPACES", title = "Workspaces" }))
+bind("g", M .. "|SHIFT", new_workspace)
+bind("r", M .. "|SHIFT", rename_workspace)
+bind("n", M .. "|SHIFT", act.SpawnWindow)
+bind("e", M, wezterm.action_callback(function(window, pane) select_exchange(window, pane) end))
+bind("f", M, act.Search({ CaseInSensitiveString = "" }))
+bind("y", M .. "|SHIFT", act.ActivateCopyMode)
+bind("y", M, tool({ "zsh", "-i", "-c", "y" }))
+bind("p", M, act.ActivateCommandPalette)
+bind(",", M, act.ReloadConfiguration)
+bind(",", M .. "|SHIFT", wezterm.action_callback(function() wezterm.open_with(wezterm.config_file) end))
+bind("=", M, act.IncreaseFontSize)
+bind("-", M, act.DecreaseFontSize)
+bind("0", M, act.ResetFontSize)
+bind("u", M, wezterm.action_callback(function(window) toggle_opacity(window, false) end))
+bind("u", M .. "|SHIFT", wezterm.action_callback(function(window) toggle_opacity(window, true) end))
+bind("i", M, tool({ "herdr" }))
+bind("i", M .. "|SHIFT", tool({ "zsh", "-i", "-c", "chat" }))
+-- Herdr does not match all legacy Alt-BackTab packets; normalize to Alt-F9.
+bind("Tab", "ALT|SHIFT", act.SendKey({ key = "F9", mods = "ALT" }))
+-- Shared Alt layer: Herdr and tmux use the same Page key adapters.
+for _, item in ipairs({ { "PageUp", "F5", "ALT" }, { "PageDown", "F6", "ALT" },
+  { "PageUp", "F7", "ALT|SHIFT" }, { "PageDown", "F8", "ALT|SHIFT" } }) do
+  bind(item[1], item[3], act.SendKey({ key = item[2], mods = "ALT" }))
+end
+-- Search opens the multiplexer copy mode and its native search prompt.
+local function copy_screen_ready(pane)
+  local text = pane:get_lines_as_text() or ""
+  -- Herdr draws its COPY hint at the bottom; tmux has our COPY status at top.
+  return text:find("COPY  h/j/k/l", 1, true) ~= nil
+    or (text:match("^[^\n]*") or ""):match("COPY%s") ~= nil
+end
+bind("f", "ALT", wezterm.action_callback(function(window, pane)
+  if copy_screen_ready(pane) then window:perform_action(act.SendString("/"), pane); return end
+  window:perform_action(act.SendKey({ key = "y", mods = "ALT|SHIFT" }), pane)
+  local attempts = 0
+  local function start_search()
+    attempts = attempts + 1
+    if copy_screen_ready(pane) then
+      window:perform_action(act.SendString("/"), pane)
+    elseif attempts < 40 then
+      wezterm.time.call_after(0.05, start_search)
+    else
+      window:toast_notification("Search", "Copy mode not ready; press / after it opens.", nil, 3000)
+    end
+  end
+  wezterm.time.call_after(0.05, start_search)
+end))
+-- Scrollback is explicit; plain Shift+PageUp/Down belongs to inner applications.
+bind("Home", M, act.ScrollToTop)
+bind("End", M, act.ScrollToBottom)
+-- Give adjacent panes their Vim direction as a native selection label.
+-- The actual second key is handled by PaneSelect, not sent to the shell.
+select_exchange = function(window, pane)
+  local tab = pane:tab()
+  if not tab then return end
+  local labels = {}
+  for _, item in ipairs({ { "h", "Left" }, { "j", "Down" }, { "k", "Up" }, { "l", "Right" } }) do
+    local target = tab:get_pane_direction(item[2])
+    if target and target:pane_id() ~= pane:pane_id() then labels[target:pane_id()] = item[1] end
+  end
+  local alphabet, extra = "", "1234567890abcdefgimnopqrstuvwxyz"
+  for i, info in ipairs(tab:panes_with_info()) do
+    local label = labels[info.pane:pane_id()] or extra:sub(i, i)
+    if label == "" then return end
+    alphabet = alphabet .. label
+  end
+  if #alphabet > 1 then
+    window:perform_action(act.PaneSelect({ mode = "SwapWithActiveKeepFocus", alphabet = alphabet }), pane)
+  end
+end
+return { keys = keys, key_tables = {
     copy_mode = {
       -- 移動
       { key = "LeftArrow",  mods = "NONE", action = act.CopyMode("MoveLeft") },

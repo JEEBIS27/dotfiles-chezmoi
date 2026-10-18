@@ -5,10 +5,18 @@ return {
     config = function()
       local builtin = require("statuscol.builtin")
       local mode_style = require("utils.mode_colors")
-      for scene, color in pairs(mode_style.colors) do
-        vim.api.nvim_set_hl(0, "StatusColMode" .. scene, { fg = color })
+      local function refresh_mode_highlights()
+        for scene, color in pairs(mode_style.colors) do
+          vim.api.nvim_set_hl(0, "StatusColMode" .. scene, { fg = color })
+        end
       end
-      local operator_icons = { d = "", y = "", c = "" }
+      refresh_mode_highlights()
+      vim.api.nvim_create_autocmd("ColorScheme", {
+        group = vim.api.nvim_create_augroup("StatusColThemeColors", { clear = true }),
+        callback = refresh_mode_highlights,
+        desc = "statuscolのモード色を現在のThemeに同期",
+      })
+      local operator_icons = { d = "", y = "", c = "", r = "" }
       _G._my_statuscolumn_operator = nil
       _G._my_statuscolumn_operator_seq = 0
 
@@ -79,7 +87,7 @@ return {
         vim.schedule(function() vim.cmd("redrawstatus") end)
       end
 
-      -- d/y/cのキー入力直後からoperatorアイコンを表示する。
+      -- d/y/cのoperatorキーとrのReplaceキーを入力直後から表示する。
       vim.on_key(function(key)
         if vim.api.nvim_get_mode().mode ~= "n" or not operator_icons[key] then
           return

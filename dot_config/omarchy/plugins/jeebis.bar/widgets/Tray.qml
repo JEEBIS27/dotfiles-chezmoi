@@ -1,3 +1,4 @@
+import "../AnimationTiming.js" as Timing
 import Quickshell
 import QtQuick
 import QtQuick.Controls
@@ -40,7 +41,7 @@ BarWidget {
     return false
   }
   // Match Waybar's group/tray-expander drawer transition-duration.
-  readonly property int animationDuration: 600
+  readonly property int animationDuration: Timing.trayDrawer.changingMs
   property real revealProgress: expanded ? 1 : 0
   readonly property real revealExtent: drawerExtent * revealProgress
 

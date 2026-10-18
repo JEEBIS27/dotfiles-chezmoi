@@ -1,3 +1,4 @@
+import "../AnimationTiming.js" as Timing
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
@@ -18,7 +19,7 @@ BarWidget {
   implicitHeight: barSize
 
   Behavior on implicitWidth {
-    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: Timing.activeWindow.resizingMs; easing.type: Easing.OutCubic }
   }
 
   Item {

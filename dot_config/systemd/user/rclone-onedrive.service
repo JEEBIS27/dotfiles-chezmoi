@@ -5,9 +5,9 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStartPre=-/usr/bin/fusermount -u %h/OneDrive
-ExecStart=/usr/bin/rclone mount onedrive: %h/OneDrive --vfs-cache-mode writes --allow-non-empty
-ExecStop=/usr/bin/fusermount -u %h/OneDrive
+ExecStartPre=-/usr/bin/fusermount3 -u %h/OneDrive
+ExecStart=/usr/bin/rclone mount onedrive: %h/OneDrive --vfs-cache-mode writes
+ExecStop=/usr/bin/fusermount3 -u %h/OneDrive
 Restart=on-failure
 RestartSec=10
 

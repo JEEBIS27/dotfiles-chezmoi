@@ -88,11 +88,11 @@ return {
     event = { "BufReadPre" },
     dependencies = { "nvim-treesitter" },
     init = function()
-      local palette = require("utils.colors").palette
-
-      require("utils.highlight").force_set_highlights("treesitter-context_hl", {
-        TreesitterContext = { bg = palette.surface1, blend = 10 },
-      })
+      require("utils.highlight").force_set_highlights("treesitter-context_hl", function()
+        return {
+          TreesitterContext = { bg = require("utils.colors").palette.surface1, blend = 10 },
+        }
+      end)
     end,
     opts = {
       max_lines = 4,

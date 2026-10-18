@@ -1,0 +1,88 @@
+{{- $p := includeTemplate "profile" . | fromJson -}}
+{{ if or (not $p.settings) (not (or $p.personalize $p.cli $p.neovim $p.ghostty $p.files $p.bar $p.hyprland $p.japanese $p.latex $p.rclone $p.fonts $p.mozkey $p.vscode $p.wezterm $p.mime)) }}
+*
+{{ end }}
+# Repository documentation and installer are never copied into $HOME.
+README.md
+AGENTS.md
+install.sh
+tests
+scripts
+# Each application/configuration can be enabled independently.
+{{ if not $p.vscode }}
+.config/vscode
+{{ end }}
+{{ if not $p.wezterm }}
+.config/wezterm
+{{ end }}
+{{ if not $p.mime }}
+.config/mimeapps.list
+{{ end }}
+{{ if not $p.mozkey }}
+.config/mozkey-ibg
+{{ end }}
+# Nested Git metadata is not an application setting.
+.config/bat/themes/**/.git
+.config/bat/themes/**/.git/**
+{{ if not $p.personalize }}
+.gitconfig
+.config/delta
+{{ end }}
+{{ if not $p.cli }}
+.zshrc
+.config/zsh
+.config/sheldon
+.config/herdr
+.config/tmux
+.config/bat
+{{ end }}
+{{ if not $p.neovim }}
+.config/nvim
+{{ end }}
+# Ghostty files are legacy reference material; WezTerm is the synced terminal.
+.config/ghostty
+{{ if not $p.files }}
+.config/yazi
+.local/share/applications/Yazi.desktop
+{{ end }}
+{{ if not $p.bar }}
+.config/omarchy/branding
+.config/omarchy/defaults
+.config/omarchy/extensions
+# Keep the theme-set hook when only Omarchy theme integration is enabled.
+.config/omarchy/hooks/battery-low.d
+.config/omarchy/hooks/font-set.d
+.config/omarchy/hooks/post-boot.d
+.config/omarchy/hooks/post-update.d
+.config/omarchy/hooks/pre-refresh-pacman.d
+.config/omarchy/plugins
+.config/omarchy/shell.json
+.config/omarchy/shell.toml
+.local/bin/jeebis-bar-action
+{{ end }}
+{{ if not $p.omarchy }}
+.config/omarchy/backgrounds
+.config/omarchy/hooks/theme-set.d
+.config/omarchy/themed
+.config/omarchy/themes
+{{ end }}
+{{ if not $p.hyprland }}
+.config/hypr
+.local/bin/jeebis-theme-cycle
+{{ end }}
+{{ if not (or $p.japanese $p.mozkey) }}
+.config/fcitx5
+{{ end }}
+{{ if not $p.mozkey }}
+.config/fcitx5/conf/mozkey-ibg.conf
+{{ end }}
+{{ if not $p.latex }}
+.config/tex
+{{ end }}
+{{ if not $p.rclone }}
+.config/systemd/user/rclone-gdrive.service
+.config/systemd/user/rclone-onedrive.service
+{{ end }}
+{{ if not $p.fonts }}
+.local/share/fonts/HackGen
+{{ end }}

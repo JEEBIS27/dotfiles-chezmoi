@@ -1,3 +1,4 @@
+import "../jeebis.bar/AnimationTiming.js" as Timing
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
@@ -18,46 +19,86 @@ BarWidget {
   property var workspaceCpuTicks: ({})
   property var busySamplesByWorkspace: ({})
   property var busyWorkspaces: ({})
+  property var workspaceCpuUsage: ({})
+  property bool systemBusy: false
+  readonly property int fallbackBusyWorkspaceId: {
+    if (!systemBusy) return 0
+    var ids = root.activeWorkspaceIds
+    // Already attributed busy workspaces keep their own spinners.
+    for (var i = 0; i < ids.length; i++)
+      if (root.busyWorkspaces[String(ids[i])] === true) return 0
+    var bestId = 0
+    var bestUsage = 0
+    for (var j = 0; j < ids.length; j++) {
+      var usage = Number(root.workspaceCpuUsage[String(ids[j])]) || 0
+      if (usage > bestUsage) { bestUsage = usage; bestId = ids[j] }
+    }
+    if (bestId > 0) return bestId
+    var focused = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0
+    return ids.indexOf(focused) >= 0 ? focused : (ids.length > 0 ? ids[0] : 0)
+  }
   property var launchingWorkspaces: ({})
   property double previousWorkspaceSampleAt: -1
   property int spinnerFrame: 0
   readonly property string spinnerFrames: "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-  readonly property color inactiveDotColor: "#727169" // Kanagawa dark_foreground
-  readonly property color focusedDotColor: "#dcd7ba" // Kanagawa foreground
+  readonly property color inactiveDotColor: Color.muted
+  readonly property color focusedDotColor: bar ? bar.barForeground : Color.bar.text
 
+  // Start hidden. Resolve the model before beginning any reveal animation.
+  property bool initialized: false
   readonly property var activeWorkspaceIds: WorkspaceModel.activeIds(
     Hyprland.workspaces.values, Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
-  readonly property bool islandRequested: WorkspaceModel.shouldShow(activeWorkspaceIds)
-  property real islandRevealProgress: islandRequested ? 1 : 0
+  readonly property bool islandRequested: initialized && (WorkspaceModel.shouldShow(activeWorkspaceIds)
+    || (root.systemBusy && activeWorkspaceIds.length > 0))
+  property real islandRevealProgress: 0
   property var displayedWorkspaceIds: []
-  property real contentWidth: grid.implicitWidth + trailingGap
-  property real contentHeight: grid.implicitHeight
+  property real contentWidth: displayedWorkspaceIds.length > 0 ? grid.implicitWidth + trailingGap : 0
+  property real contentHeight: displayedWorkspaceIds.length > 0 ? grid.implicitHeight : 0
 
   function syncDisplayedWorkspaces() {
-    // Preserve the last set of dots until the exit animation has finished.
-    if (!root.islandRequested && root.islandRevealProgress > 0) return
-    var next = root.islandRequested ? root.activeWorkspaceIds.slice() : []
-    if (JSON.stringify(next) !== JSON.stringify(root.displayedWorkspaceIds))
-      root.displayedWorkspaceIds = next
+    if (!root.initialized) return
+    if (root.islandRequested && root.activeWorkspaceIds.length > 0) {
+      // Populate the Repeater first; revealing an empty model paints a thin pill.
+      var next = root.activeWorkspaceIds.slice()
+      if (JSON.stringify(next) !== JSON.stringify(root.displayedWorkspaceIds))
+        root.displayedWorkspaceIds = next
+      root.islandRevealProgress = 1
+    } else {
+      // Retain outgoing dots while the exit animation runs.
+      var wasRevealed = root.islandRevealProgress > 0
+      root.islandRevealProgress = 0
+      if (!wasRevealed && root.displayedWorkspaceIds.length > 0) root.displayedWorkspaceIds = []
+    }
   }
 
-  onActiveWorkspaceIdsChanged: root.syncDisplayedWorkspaces()
-  onIslandRevealProgressChanged: if (islandRevealProgress === 0) root.syncDisplayedWorkspaces()
-  Component.onCompleted: root.syncDisplayedWorkspaces()
+  // Bindings can settle in a different order during reload. Defer and observe
+  // both the actual ID list and visibility request, not just the first signal.
+  onActiveWorkspaceIdsChanged: Qt.callLater(root.syncDisplayedWorkspaces)
+  onIslandRequestedChanged: Qt.callLater(root.syncDisplayedWorkspaces)
+  onIslandRevealProgressChanged: {
+    if (islandRevealProgress === 0 && !islandRequested && displayedWorkspaceIds.length > 0)
+      displayedWorkspaceIds = []
+  }
+  Component.onCompleted: {
+    root.initialized = true
+    Qt.callLater(root.syncDisplayedWorkspaces)
+  }
 
-  visible: islandRevealProgress > 0
+  visible: islandRevealProgress > 0 && displayedWorkspaceIds.length > 0
   clip: true
-  implicitWidth: (vertical ? barSize : contentWidth) * islandRevealProgress
+  // Keep the capsule's full shape while sliding; only remove its slot after exit.
+  implicitWidth: visible ? (vertical ? barSize : contentWidth) : 0
   implicitHeight: visible ? (vertical ? contentHeight * islandRevealProgress : barSize) : 0
 
   Behavior on islandRevealProgress {
-    NumberAnimation { duration: 240; easing.type: Easing.InOutCubic }
+    NumberAnimation { duration: root.islandRequested ? Timing.workspaceIsland.enteringMs : Timing.workspaceIsland.leavingMs; easing.type: Easing.InOutCubic }
   }
   Behavior on contentWidth {
-    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+    enabled: root.visible && root.islandRevealProgress === 1
+    NumberAnimation { duration: Timing.workspaceIsland.resizingMs; easing.type: Easing.OutCubic }
   }
   Behavior on contentHeight {
-    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: Timing.workspaceIsland.resizingMs; easing.type: Easing.OutCubic }
   }
 
   function updateWorkspaceCpu(output) {
@@ -73,6 +114,7 @@ BarWidget {
     var nextTicks = ({})
     var nextSamples = ({})
     var nextBusy = ({})
+    var nextUsage = ({})
     var ids = root.activeWorkspaceIds
 
     for (var i = 0; i < ids.length; i++) {
@@ -84,6 +126,7 @@ BarWidget {
 
       if (elapsed > 0) {
         var cpuPercent = Math.max(0, (ticks - previousTicks) / tickRate / elapsed * 100)
+        nextUsage[key] = cpuPercent
         if (cpuPercent >= root.workspaceCpuBusyThreshold) {
           samples = Math.min(samples + 1, 2)
           if (samples >= 2) busy = true
@@ -101,6 +144,7 @@ BarWidget {
     root.workspaceCpuTicks = nextTicks
     root.busySamplesByWorkspace = nextSamples
     root.busyWorkspaces = nextBusy
+    root.workspaceCpuUsage = nextUsage
     root.previousWorkspaceSampleAt = now
   }
 
@@ -113,6 +157,7 @@ BarWidget {
   }
 
   function hasActiveSpinner() {
+    if (root.systemBusy) return true
     var busyIds = Object.keys(root.busyWorkspaces)
     for (var i = 0; i < busyIds.length; i++) if (root.busyWorkspaces[busyIds[i]]) return true
     var launchingIds = Object.keys(root.launchingWorkspaces)
@@ -176,7 +221,7 @@ BarWidget {
   }
 
   Timer {
-    interval: 90
+    interval: Timing.workspaceActivity.cyclingMs
     running: root.visible && root.hasActiveSpinner()
     repeat: true
     onTriggered: root.spinnerFrame = (root.spinnerFrame + 1) % root.spinnerFrames.length
@@ -193,8 +238,8 @@ BarWidget {
     width: implicitWidth
     height: implicitHeight
     columns: root.vertical ? 1 : Math.max(2, root.displayedWorkspaceIds.length)
-    opacity: root.islandRevealProgress
-    scale: 0.9 + 0.1 * root.islandRevealProgress
+    opacity: root.bar && root.bar.position === "top" ? 1 : root.islandRevealProgress
+    scale: root.bar && root.bar.position === "top" ? 1 : 0.9 + 0.1 * root.islandRevealProgress
     columnSpacing: root.vertical ? 0 : Style.space(1)
     rowSpacing: root.vertical ? Style.space(2) : 0
 
@@ -216,7 +261,7 @@ BarWidget {
 
         Timer {
           id: launchPulseTimer
-          interval: 1800
+          interval: Timing.workspaceActivity.settlingMs
           onTriggered: {
             workspaceButton.launchPulse = false
             root.setLaunchPulse(workspaceButton.modelData, false)
@@ -227,6 +272,7 @@ BarWidget {
         readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
         readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
         readonly property bool workspaceBusy: root.busyWorkspaces[String(modelData)] === true
+          || (root.systemBusy && root.fallbackBusyWorkspaceId === modelData)
 
         bar: root.bar
         text: workspaceBusy || launchPulse

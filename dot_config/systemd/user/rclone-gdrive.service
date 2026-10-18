@@ -5,9 +5,9 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStartPre=-/usr/bin/fusermount -u %h/GoogleDrive
-ExecStart=/usr/bin/rclone mount gdrive: %h/GoogleDrive --vfs-cache-mode writes --allow-non-empty
-ExecStop=/usr/bin/fusermount -u %h/GoogleDrive
+ExecStartPre=-/usr/bin/fusermount3 -u %h/GoogleDrive
+ExecStart=/usr/bin/rclone mount gdrive: %h/GoogleDrive --vfs-cache-mode writes
+ExecStop=/usr/bin/fusermount3 -u %h/GoogleDrive
 Restart=on-failure
 RestartSec=10
 

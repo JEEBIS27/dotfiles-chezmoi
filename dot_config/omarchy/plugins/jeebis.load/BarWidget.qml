@@ -1,3 +1,4 @@
+import "../jeebis.bar/AnimationTiming.js" as Timing
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -33,8 +34,8 @@ BarWidget {
   onHighMetricsChanged: if (highMetrics.length > 0) displayedMetrics = highMetrics
   Component.onCompleted: if (highMetrics.length > 0) displayedMetrics = highMetrics
 
-  readonly property color normalColor: "#727169" // Kanagawa dark_foreground
-  readonly property color highLoadColor: "#c34043" // Kanagawa red
+  readonly property color normalColor: Color.muted
+  readonly property color highLoadColor: Color.urgent
   readonly property color statusColor: root.highLoadColor
   readonly property real itemSpacing: Style.space(2)
 
@@ -48,10 +49,10 @@ BarWidget {
   implicitHeight: visible ? barSize : 0
 
   Behavior on islandRevealProgress {
-    NumberAnimation { duration: 240; easing.type: Easing.InOutCubic }
+    NumberAnimation { duration: root.islandRequested ? Timing.loadIsland.enteringMs : Timing.loadIsland.leavingMs; easing.type: Easing.InOutCubic }
   }
   Behavior on contentWidth {
-    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+    NumberAnimation { duration: Timing.loadIsland.resizingMs; easing.type: Easing.OutCubic }
   }
 
   function updateStats(output) {

@@ -272,11 +272,10 @@ alias gn='git reset --soft HEAD~1'
 # other
 alias _=sudo
 alias h='history'
-alias x='clear && ls'
 alias q='exit'
 alias cat='bat'
 alias batcat='bat'
-alias chat='copilot'
+alias chat='codex'
 alias nv='nvim'
 alias latexmk='latexmk -r ~/.config/tex/.latexmkrc -pvc'
 
@@ -291,6 +290,15 @@ if [[ -o interactive ]]; then
   elif command -v xsel >/dev/null 2>&1; then
     typeset -g __CLIP_CMD='xsel --clipboard --input'
   fi
+
+  # Ctrl+L clears the screen and shows the current directory listing.
+  __clear_and_list_widget() {
+    zle -I
+    clear && ls
+    zle redisplay
+  }
+  zle -N __clear_and_list_widget
+  bindkey '^L' __clear_and_list_widget
 
   __accept_line_with_clip_prefix() {
     emulate -L zsh

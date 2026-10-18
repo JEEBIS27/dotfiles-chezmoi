@@ -1,3 +1,4 @@
+import "AnimationTiming.js" as Timing
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -83,9 +84,9 @@ Item {
   property color background: Color.bar.background
   property color urgent: Color.bar.active
 
-  Behavior on barForeground { enabled: root.foregroundAnimationEnabled; ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on background { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
-  Behavior on urgent { ColorAnimation { duration: 420; easing.type: Easing.InOutCubic } }
+  Behavior on barForeground { enabled: root.foregroundAnimationEnabled; ColorAnimation { duration: Timing.themeTransition.changingMs; easing.type: Easing.InOutCubic } }
+  Behavior on background { ColorAnimation { duration: Timing.themeTransition.changingMs; easing.type: Easing.InOutCubic } }
+  Behavior on urgent { ColorAnimation { duration: Timing.themeTransition.changingMs; easing.type: Easing.InOutCubic } }
   property var tooltipTarget: null
   property var pendingTooltipTarget: null
   property string tooltipText: ""
@@ -857,7 +858,7 @@ Item {
 
   Timer {
     id: centerSectionRevealTimer
-    interval: 120
+    interval: Timing.barInteraction.releasingMs
     // Collapse only. Opening the peek is the center section's own gesture, done
     // in setCenterSectionHovered, so a timer left pending by a pointer that dipped
     // off the bar and came back cannot reveal indicators it never pointed at.
@@ -1188,7 +1189,7 @@ Item {
 
   Timer {
     id: tooltipTimer
-    interval: 400
+    interval: Timing.tooltip.preparingMs
     onTriggered: {
       if (root.targetTooltipHovered(root.tooltipTarget)) root.tooltipShown = true
       else root.clearTooltip()
@@ -1196,7 +1197,7 @@ Item {
   }
 
   Timer {
-    interval: 100
+    interval: Timing.tooltip.releasingMs
     running: root.tooltipShown
     repeat: true
     onTriggered: if (!root.targetTooltipHovered(root.tooltipTarget)) root.hideTooltip(root.tooltipTarget)
@@ -1650,10 +1651,20 @@ Item {
         opacity: root.barMoveCandidate === modelData ? (root.transparent ? 0.45 : 0.7) : 0
 
         Behavior on opacity {
-          NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+          NumberAnimation { duration: Timing.edgePreview.changingMs; easing.type: Easing.OutCubic }
         }
       }
     }
+  }
+
+  readonly property bool loadIslandVisible: {
+    var slots = root.moduleSlots
+    for (var i = 0; i < slots.length; i++) {
+      var slot = slots[i]
+      if (slot.moduleName === "jeebis.load" && slot.activeItem
+          && slot.activeItem.visible && slot.activeItem.islandRevealProgress > 0) return true
+    }
+    return false
   }
 
   property int agentHoverCount: 0
@@ -1664,6 +1675,80 @@ Item {
   property bool agentLaunchPulse: false
   property bool companionTrackingReady: false
   property string previousAgentSignature: ""
+  property var agentWindowArchive: ({})
+  property var pendingAgentClosures: []
+  readonly property bool agentActivitySequenceActive: {
+    var slots = root.moduleSlots
+    for (var i = 0; i < slots.length; i++) {
+      var slot = slots[i]
+      if (slot.moduleName === "jeebis.agent-launchers" && slot.activeItem && slot.activeItem.activitySequence) return true
+    }
+    return false
+  }
+  function agentAddressKey(address) { return String(address || "").toLowerCase().replace(/^0x/, "") }
+  function archiveAgentWindows() {
+    var archive = Object.assign({}, agentWindowArchive)
+    var clients = Hyprland.toplevels.values
+    for (var i = 0; i < clients.length; i++) {
+      var kind = AgentModel.kind(clients[i])
+      if (kind) archive[agentAddressKey(clients[i].address)] = kind
+    }
+    agentWindowArchive = archive
+  }
+  function animateAgentOpens(kinds) {
+    var running = ({})
+    var clients = Hyprland.toplevels.values
+    for (var i = 0; i < clients.length; i++) {
+      var kind = AgentModel.kind(clients[i])
+      if (kind) running[kind] = true
+    }
+    var widgets = root.moduleWidgets("jeebis.agent-launchers")
+    var played = false
+    for (var j = 0; j < kinds.length; j++) {
+      if (!running[kinds[j]]) continue
+      for (var n = 0; n < widgets.length; n++) widgets[n].playOpen(kinds[j])
+      played = true
+    }
+    if (played) {
+      agentLaunchPulse = false
+      agentLaunchTimer.stop()
+    }
+  }
+  function rememberAgentClose(address) {
+    var key = agentAddressKey(address)
+    var kind = agentWindowArchive[key]
+    if (!kind) return
+    var pending = pendingAgentClosures.slice()
+    pending.push({ address: key, kind: kind })
+    pendingAgentClosures = pending
+    var archive = Object.assign({}, agentWindowArchive)
+    delete archive[key]
+    agentWindowArchive = archive
+    Qt.callLater(flushAgentClosures)
+  }
+  function flushAgentClosures() {
+    var clients = Hyprland.toplevels.values
+    var addresses = ({})
+    var running = ({})
+    for (var i = 0; i < clients.length; i++) {
+      addresses[agentAddressKey(clients[i].address)] = AgentModel.kind(clients[i])
+      var kind = AgentModel.kind(clients[i])
+      if (kind) running[kind] = true
+    }
+    var deferred = []
+    for (var j = 0; j < pendingAgentClosures.length; j++) {
+      var closed = pendingAgentClosures[j]
+      if (addresses[closed.address] === closed.kind) { deferred.push(closed); continue }
+      if (running[closed.kind]) continue
+      var widgets = root.moduleWidgets("jeebis.agent-launchers")
+      for (var n = 0; n < widgets.length; n++) widgets[n].playExit(closed.kind)
+      root.agentLaunchPulse = false
+      agentLaunchTimer.stop()
+    }
+    pendingAgentClosures = deferred
+    if (deferred.length > 0) agentCloseRetry.restart()
+  }
+  Timer { id: agentCloseRetry; interval: 40; onTriggered: root.flushAgentClosures() }
 
   readonly property string agentSignature: {
     var addresses = []
@@ -1704,6 +1789,7 @@ Item {
   }
 
   function revealAgent() {
+    if (agentActivitySequenceActive) return
     agentLaunchPulse = true
     agentLaunchTimer.restart()
   }
@@ -1721,25 +1807,53 @@ Item {
     var current = agentSignature ? agentSignature.split(",") : []
     var added = current.some(function(address) { return previous.indexOf(address) === -1 })
     previousAgentSignature = agentSignature
-    if (companionTrackingReady && added) revealAgent()
+    // A Codex process may end while its WezTerm window stays open. Treat the
+    // classification change like an Agent close, without waiting for closewindow.
+    if (companionTrackingReady) {
+      var clientsNow = Hyprland.toplevels.values
+      for (var r = 0; r < previous.length; r++) {
+        if (!previous[r] || current.indexOf(previous[r]) >= 0) continue
+        for (var c = 0; c < clientsNow.length; c++) {
+          if (agentAddressKey(clientsNow[c].address) === agentAddressKey(previous[r])
+              && !AgentModel.kind(clientsNow[c])) root.rememberAgentClose(previous[r])
+        }
+      }
+    }
+    if (companionTrackingReady && added) {
+      var alreadyRunning = ({})
+      for (var i = 0; i < previous.length; i++) {
+        var kind = agentWindowArchive[agentAddressKey(previous[i])]
+        if (kind) alreadyRunning[kind] = true
+      }
+      var opens = []
+      var clients = Hyprland.toplevels.values
+      for (var j = 0; j < clients.length; j++) {
+        var kind = AgentModel.kind(clients[j])
+        if (kind && !alreadyRunning[kind] && opens.indexOf(kind) === -1) opens.push(kind)
+      }
+      if (opens.length > 0) Qt.callLater(root.animateAgentOpens, opens)
+      else revealAgent()
+    }
+    Qt.callLater(root.archiveAgentWindows)
   }
   Connections {
     target: Hyprland
     function onRawEvent(event) {
+      if (event && event.name === "closewindow") root.rememberAgentClose(event.data)
       if (event && ((event.name === "custom" && String(event.data) === "jeebis.apps.reveal")
           || event.name === "workspacev2")) Qt.callLater(root.revealAgentForWorkspace)
     }
   }
   Timer {
     id: agentExitTimer
-    interval: 100
+    interval: Timing.agentIsland.releasingMs
     onTriggered: {
       root.agentHoverHeld = false
       root.agentLaunchPulse = false
       agentLaunchTimer.stop()
     }
   }
-  Timer { id: agentLaunchTimer; interval: 2000; onTriggered: root.agentLaunchPulse = false }
+  Timer { id: agentLaunchTimer; interval: Timing.agentIsland.presentMs; onTriggered: root.agentLaunchPulse = false }
   Timer { interval: 1; running: true; onTriggered: root.companionTrackingReady = true }
 
   function findCenterAnchorEntry() {
@@ -1797,12 +1911,12 @@ Item {
           id: workspaceBump
           enabled: false
           z: -1
-          visible: centerRoot.hasAnchor && root.position === "top" && centerAnchorModule.width > 0
-          opacity: centerAnchorModule.islandRevealProgress
-          x: centerAnchorModule.x - Style.space(8) * centerAnchorModule.islandRevealProgress
-          y: Math.round((parent.height - height) / 2)
-          width: centerAnchorModule.width + Style.space(16) * centerAnchorModule.islandRevealProgress
-          height: root.barSize * (0.84 + 0.16 * centerAnchorModule.islandRevealProgress)
+          visible: centerRoot.hasAnchor && root.position === "top" && centerAnchorModule.width > 0 && centerAnchorModule.islandRevealProgress > 0
+          opacity: 1
+          x: centerAnchorModule.x - Style.space(8)
+          y: Math.round((parent.height - height) / 2) - (root.barSize + 2) * (1 - centerAnchorModule.islandRevealProgress)
+          width: centerAnchorModule.width + Style.space(16)
+          height: root.barSize
           radius: height / 2
           color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.94)
           border.width: 1
@@ -1826,7 +1940,7 @@ Item {
           entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
           region: "center"
           anchors.right: centerAnchorModule.left
-          anchors.rightMargin: Style.space(16)
+          anchors.rightMargin: Style.space(16) * centerBeforeModules.islandRevealProgress
           anchors.verticalCenter: centerAnchorModule.verticalCenter
         }
 
@@ -1851,7 +1965,7 @@ Item {
           anchors.right: centerAnchorModule.left
           anchors.rightMargin: Style.space(8)
           anchors.verticalCenter: centerAnchorModule.verticalCenter
-          width: Math.max(Style.bar.iconSlot, centerBeforeModules.width) + Style.space(16)
+          width: Math.max(Style.bar.iconSlot, centerBeforeModules.hoverTargetWidth) + Style.space(16)
           height: root.barSize
           HoverHandler {
             onHoveredChanged: root.agentHoverCount = Math.max(0, root.agentHoverCount + (hovered ? 1 : -1))
@@ -1865,6 +1979,9 @@ Item {
           entry: centerRoot.anchorEntry
           region: "center"
           anchors.centerIn: parent
+          transform: Translate {
+            y: root.position === "top" ? -(root.barSize + 2) * (1 - centerAnchorModule.islandRevealProgress) : 0
+          }
           Item {
             anchors.fill: parent
             anchors.leftMargin: -Style.space(8)
@@ -1890,7 +2007,8 @@ Item {
 
         Item {
           visible: centerRoot.hasAnchor && centerAfterModules.hoverTargetWidth > 0
-          x: centerAfterModules.x - Style.space(8)
+          // The hit target stays at the final resting position during motion.
+          x: centerAnchorModule.x + centerAnchorModule.width + Style.space(8)
           width: centerAfterModules.hoverTargetWidth + Style.space(16)
           height: root.barSize
           anchors.verticalCenter: centerAnchorModule.verticalCenter
@@ -1905,7 +2023,7 @@ Item {
           z: -1
           visible: centerRoot.hasAnchor && centerAfterModules.mainIslandWidth > 0
           opacity: centerAfterModules.islandRevealProgress
-          x: centerAfterModules.x - Style.space(8) * centerAfterModules.islandRevealProgress
+          x: centerAfterModules.x + centerAfterModules.mainIslandOffsetX - Style.space(8) * centerAfterModules.islandRevealProgress
           y: Math.round((parent.height - height) / 2)
           width: centerAfterModules.mainIslandWidth + Style.space(16) * centerAfterModules.islandRevealProgress
           height: root.barSize * (0.84 + 0.16 * centerAfterModules.islandRevealProgress)
@@ -1983,6 +2101,15 @@ Item {
 
     property var entries: []
     property string region: ""
+    readonly property real mainIslandOffsetX: {
+      var slots = root.moduleSlots
+      for (var i = 0; i < slots.length; i++) {
+        var slot = slots[i]
+        if (slot && slot.parent === moduleListRoot.item && slot.activeItem
+            && "mainIslandOffsetX" in slot.activeItem) return slot.activeItem.mainIslandOffsetX
+      }
+      return 0
+    }
     readonly property real mainIslandWidth: {
       var width = 0
       var slots = root.moduleSlots
@@ -1999,7 +2126,8 @@ Item {
       for (var i = 0; i < slots.length; i++) {
         var slot = slots[i]
         if (!slot || slot.parent !== moduleListRoot.item || !slot.activeItem) continue
-        width += "hoverTargetWidth" in slot.activeItem ? slot.activeItem.hoverTargetWidth : slot.width
+        width += "hoverTargetWidth" in slot.activeItem ? slot.activeItem.hoverTargetWidth
+          : (slot.companionAgent ? slot.activeItem.implicitWidth : slot.width)
       }
       return width
     }
@@ -2107,10 +2235,10 @@ Item {
         agentPanelGrace = true
       } else if (agentPanelGrace) panelGraceTimer.restart()
     }
-    Timer { id: panelGraceTimer; interval: 100; onTriggered: slot.agentPanelGrace = false }
-    readonly property bool agentRequested: root.agentHoverHeld || panelOpen || agentPanelGrace || root.agentLaunchPulse
+    Timer { id: panelGraceTimer; interval: Timing.agentIsland.returningMs; onTriggered: slot.agentPanelGrace = false }
+    readonly property bool agentRequested: root.agentHoverHeld || panelOpen || agentPanelGrace || root.agentLaunchPulse || root.agentActivitySequenceActive
     property real agentProgress: agentRequested ? 1 : 0
-    Behavior on agentProgress { NumberAnimation { duration: 240; easing.type: Easing.InOutCubic } }
+    Behavior on agentProgress { NumberAnimation { duration: slot.agentRequested ? Timing.agentIsland.enteringMs : Timing.agentIsland.leavingMs; easing.type: Easing.InOutCubic } }
     clip: companionAgent
     opacity: companionAgent ? agentProgress : 1
     readonly property real islandRevealProgress: companionAgent ? agentProgress : activeItem
@@ -2236,7 +2364,7 @@ Item {
       z: 50
 
       Behavior on opacity {
-        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: slot.panelOpen ? Timing.panelSelection.enteringMs : Timing.panelSelection.leavingMs; easing.type: Easing.OutCubic }
       }
     }
 
@@ -2375,6 +2503,9 @@ Item {
         ? root : root.pluginBarApiFor(pluginApiId, moduleName, registered)
       if ("moduleName" in target) target.moduleName = moduleName
       if ("settings" in target) target.settings = moduleSettings
+      // Bridge the shared load state without exposing another plugin's objects.
+      if (slot.moduleName === "jeebis.workspaces" && "systemBusy" in target)
+        target.systemBusy = Qt.binding(function() { return root.loadIslandVisible })
     }
 
     Component {

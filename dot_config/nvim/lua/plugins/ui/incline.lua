@@ -16,32 +16,30 @@ return {
       return mode_style.background(scene)
     end
 
-    local fg_active = palette.text
-    local fg_inactive = palette.overlay0
     local icons = { error = "󰅚 ", warn = "󰀪 ", hint = "󰌶 ", info = " " }
-    local diag_colors = {
-      error = palette.red,
-      warn = palette.peach,
-      hint = palette.springBlue,
-      info = palette.dragonBlue2,
+    local diag_palette_keys = {
+      error = "red",
+      warn = "peach",
+      hint = "springBlue",
+      info = "dragonBlue2",
     }
 
     --- @param props { buf: number, win: number, focused: boolean }
     local function get_diagnostic_label(props, bg)
       local label = {}
 
-        for severity, icon in pairs(icons) do
+      for severity, icon in pairs(icons) do
           local n = #vim.diagnostic.get(props.buf, { severity = vim.diagnostic.severity[string.upper(severity)] })
           if n > 0 then
             table.insert(label, {
               icon .. n .. " ",
-              guifg = props.focused and diag_colors[severity] or fg_inactive,
+              guifg = props.focused and palette[diag_palette_keys[severity]] or palette.overlay0,
               guibg = bg,
             })
           end
         end
       if #label > 0 then
-        table.insert(label, { "┊ ", guifg = fg_inactive, guibg = bg })
+        table.insert(label, { "┊ ", guifg = palette.overlay0, guibg = bg })
       end
       return label
     end
@@ -58,14 +56,14 @@ return {
 
       local isReadonly = vim.bo[props.buf].readonly
 
-      local fg_filename = props.focused and fg_active or fg_inactive
+      local fg_filename = props.focused and palette.text or palette.overlay0
 
       return {
         { props.focused and "" or "", guifg = item_bg, guibg = "none" },
         { get_diagnostic_label(props, item_bg) },
         {
           (ft_icon and ft_icon .. " " or ""),
-          guifg = props.focused and (ft_color or fg_active) or fg_inactive,
+          guifg = props.focused and (ft_color or palette.text) or palette.overlay0,
           guibg = item_bg,
         },
         {
@@ -75,7 +73,7 @@ return {
         },
         {
           dirname and dirname .. "/" or "",
-          guifg = props.focused and fg_active or fg_inactive,
+          guifg = props.focused and palette.text or palette.overlay0,
           guibg = item_bg,
         },
         {
@@ -86,7 +84,7 @@ return {
         },
         {
           vim.bo[props.buf].modified and " ●" or "",
-          guifg = props.focused and palette.peach or fg_inactive,
+          guifg = props.focused and palette.peach or palette.overlay0,
           guibg = item_bg,
         },
         { props.focused and "" or "", guifg = item_bg, guibg = "none" },
@@ -96,8 +94,8 @@ return {
     return {
       highlight = {
         groups = {
-          InclineNormal = { guibg = "none", guifg = fg_active },
-          InclineNormalNC = { guibg = "none", guifg = fg_inactive },
+          InclineNormal = { guibg = "none", guifg = palette.text },
+          InclineNormalNC = { guibg = "none", guifg = palette.overlay0 },
         },
       },
       window = {

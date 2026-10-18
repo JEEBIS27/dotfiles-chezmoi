@@ -29,7 +29,6 @@ return {
     "shellRaining/hlchunk.nvim",
     event = { "BufReadPre", "BufNewFile" },
     config = function()
-      local palette = require("utils.colors").palette
       require("hlchunk").setup({
         chunk = {
           enable = true,
@@ -43,9 +42,9 @@ return {
             left_bottom = "╰",
             right_arrow = "─",
           },
-          style = {
-            { fg = palette.oniViolet },
-          },
+          style = function()
+            return { { fg = require("utils.colors").palette.oniViolet } }
+          end,
           textobject = "",
           max_file_size = 1024 * 1024,
           error_sign = true,
@@ -57,14 +56,16 @@ return {
           chars = {
             "│",
           },
-          style = {
-            { fg = palette.sumiInk5 },
-          },
+          style = function()
+            return { { fg = require("utils.colors").palette.sumiInk5 } }
+          end,
         },
         line_num = {
           enable = false,
           use_treesitter = false,
-          style = palette.oniViolet,
+          style = function()
+            return require("utils.colors").palette.oniViolet
+          end,
         },
         blank = {
           enable = false,
@@ -129,7 +130,9 @@ return {
     opts = function()
       return {
         fadelevel = 0.4,
-        basebg = require("utils.colors").palette.base,
+        basebg = function()
+          return require("utils.colors").palette.base
+        end,
       }
     end,
   },

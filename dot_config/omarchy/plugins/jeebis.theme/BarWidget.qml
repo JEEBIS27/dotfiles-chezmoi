@@ -14,7 +14,6 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "󰸌"
-    foreground: "#dcd7ba"
     tooltipText: "クリック: テーマ選択 · ダブルクリック: Aether"
     fixedWidth: Style.bar.iconSlot
     fixedHeight: root.barSize

@@ -1,0 +1,12 @@
+{{- $p := includeTemplate "profile" . | fromJson -}}
+{{ if and $p.settings $p.omarchy -}}
+#!/bin/bash
+set -euo pipefail
+{{ range $file := list "palette.lua.tpl" "wezterm.toml.tpl" "yazi.toml.tpl" "preview.tmTheme.tpl" -}}
+# {{ $file }}: {{ include (joinPath "dot_config/omarchy/themed" $file) | sha256sum }}
+{{ end -}}
+if command -v omarchy >/dev/null 2>&1 && [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
+  theme=$(cat "$HOME/.local/state/omarchy/current/theme.name")
+  OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy theme set "$theme"
+fi
+{{ end -}}

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# User browser entry point; always retain the caller's workspace.
+set -euo pipefail
+args=()
+for argument in "$@"; do
+  if [[ "$argument" == --private ]]; then
+    args+=(--incognito)
+  else
+    args+=("$argument")
+  fi
+done
+exec uwsm-app -- helium-browser "${args[@]}"
