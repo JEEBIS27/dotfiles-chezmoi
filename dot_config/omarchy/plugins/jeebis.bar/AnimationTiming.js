@@ -5,6 +5,11 @@
 // Object.freeze により実行中の書き換えを防ぐ。調整はこのファイルで行う。
 // 編集後は `omarchy restart shell` で全ウィジェットを再読み込みする。
 
+var centerCompanions = Object.freeze({
+  // ワークスペース島が隠れている間、Agent/App島を中央へ寄せ、もう一方が現れたら左右へ退く。
+  movingMs: 240
+})
+
 var appIsland = Object.freeze({
   // アプリ島がワークスペース島側から右へ流れ、幅と不透明度を増して現れる。
   enteringMs: 240,

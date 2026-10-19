@@ -132,7 +132,7 @@ References:
 
 ## Web application icons
 
-Normal applications use `desktopEntryForClient()` in `BarWidget.qml` to resolve
+Normal applications use `desktopEntryForClient()` in `AppGroup.qml` to resolve
 an installed `.desktop` entry and its `Icon=` value, then `iconSource()` resolves
 the icon name or file URL. Desktop launchers live in
 `~/.local/share/applications/`; user icons live in
@@ -183,3 +183,44 @@ new launchers and downloaded icon files explicitly when they should be synced.
 
 Chromium app-name reference:
 https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/web_applications/web_app_helpers.cc
+
+## Floating and tiled application groups
+
+`BarWidget.qml` hosts two persistent `AppGroup.qml` instances. Each instance
+tracks only its own floating/tiled windows in the focused workspace, with
+independent icon order, arrivals/departures and hover timers. Agent apps remain
+excluded. Clicking an icon focuses the most recent window in the same group.
+The same application can have an icon in both groups.
+
+The focused Hyprland toplevel's `lastIpcObject.floating` selects the visible
+group. Changing focus between floating/tiled windows swaps the visible list
+immediately and presents that surface from above. Each surface
+owns its themed capsule background. Empty groups create no placeholder capsule.
+
+Partial per-icon arrival/departure effects in the selected list are settled at
+the instant of selection. Ordinary per-icon launch/close effects and hover-based
+show/hide behavior remain. Group changes alone are not new launches. Super+D
+parking preserves floating/tiled membership through the special desktop workspace.
+
+No layer-switch animation timings are defined. The selected group uses the
+normal `appIsland.presentMs` auto-hide delay. Reload with `omarchy restart shell`.
+Icon collection/discovery live in `AppGroup.qml`; `BarWidget.qml` owns selection.
+
+## Composition centering and hold timing
+
+The main App capsule is centered before a launch/close composition starts.
+`compositionBaseWidth` freezes its centering reference while an incoming icon
+appears/merges or a closed icon splits/fades. Standalone extents reserve layout
+space but do not pull the original capsule away from center. After all pending
+compositions finish, `centeringWidth` animates to the new main-capsule width over
+`Timing.centerCompanions.movingMs`. Only after that movement completes does the
+usual `appArrival.settledMs` or `appDeparture.settledMs` display hold begin.
+The App island then exits upward when the workspace capsule is absent. Pointer
+hover still holds it open. A new composition cancels an older settling timer;
+workspace/group changes clear stale composition state. The first app still has
+no empty receiver; its actual standalone capsule supplies its centering span.
+
+Floating/tiled selection swaps the list immediately and presents that surface
+from above using `appIsland.enteringMs`, including when Agent is visible. Its
+normal display hold restarts after the drop finishes. The host's balance does
+not add a second easing interval while App's own centering span is animated.

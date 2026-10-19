@@ -1667,6 +1667,20 @@ Item {
     return false
   }
 
+  property string lastCompanion: "apps"
+  property string centerHoverCompanion: "apps"
+  property int centralCompanionHoverCount: 0
+  onCentralCompanionHoverCountChanged: Qt.callLater(syncCompanionHover)
+  readonly property int appsPresentationSerial: {
+    var widgets = root.moduleWidgets("jeebis.apps")
+    var serial = 0
+    for (var i = 0; i < widgets.length; i++) serial += widgets[i].revealSerial
+    return serial
+  }
+  onAppsPresentationSerialChanged: {
+    if (companionTrackingReady && !AgentModel.kind(Hyprland.activeToplevel)) lastCompanion = "apps"
+  }
+  onAgentActivitySequenceActiveChanged: if (agentActivitySequenceActive) lastCompanion = "agent"
   property int agentHoverCount: 0
   property int workspaceHoverCount: 0
   property int appsHoverCount: 0
@@ -1773,7 +1787,13 @@ Item {
   onAppsHoverCountChanged: Qt.callLater(syncCompanionHover)
 
   function syncCompanionHover() {
-    var agentHeld = agentHoverCount > 0 || (workspaceHoverCount > 0 && agentOnFocusedWorkspace)
+    var central = centralCompanionHoverCount > 0
+    var agentDirect = !central && agentHoverCount > 0
+    var appsDirect = !central && appsHoverCount > 0
+    if (agentDirect) lastCompanion = "agent"
+    else if (appsDirect) lastCompanion = "apps"
+    var agentHeld = agentDirect || (central && centerHoverCompanion === "agent")
+      || (workspaceHoverCount > 0 && agentOnFocusedWorkspace)
     if (agentHeld) {
       agentExitTimer.stop()
       agentHoverHeld = true
@@ -1782,13 +1802,14 @@ Item {
     }
     previousAgentPointerHeld = agentHeld
     var launchers = root.moduleWidgets("jeebis.agent-launchers")
-    for (var j = 0; j < launchers.length; j++) launchers[j].setExpanded(agentHoverCount > 0)
+    for (var j = 0; j < launchers.length; j++) launchers[j].setExpanded(agentDirect || (central && centerHoverCompanion === "agent"))
     var widgets = root.moduleWidgets("jeebis.apps")
     for (var i = 0; i < widgets.length; i++)
-      widgets[i].setHoverHeld(workspaceHoverCount > 0 || appsHoverCount > 0)
+      widgets[i].setHoverHeld(workspaceHoverCount > 0 || appsDirect || (central && centerHoverCompanion === "apps"))
   }
 
   function revealAgent() {
+    lastCompanion = "agent"
     if (agentActivitySequenceActive) return
     agentLaunchPulse = true
     agentLaunchTimer.restart()
@@ -1888,9 +1909,81 @@ Item {
       id: horizontalCenterModules
 
       Item {
+        id: horizontalLayout
         anchors.fill: parent
+        readonly property real workspacePresence: Math.max(0, Math.min(1, centerAnchorModule.islandRevealProgress))
+        readonly property real packedGap: (centerBeforeModules.islandRevealProgress > 0 && centerAfterModules.islandRevealProgress > 0 ? Style.space(16) : 0) * Math.min(1,
+          centerBeforeModules.width / Style.bar.iconSlot, centerAfterModules.width / Style.bar.iconSlot)
+        // A shared balance keeps both capsule edges separated while they move.
+        // One visible island has its own midpoint exactly on the screen center.
+        readonly property bool bothCompanions: centerBeforeModules.width > 0 && centerAfterModules.width > 0 && centerBeforeModules.islandRevealProgress > 0 && centerAfterModules.islandRevealProgress > 0
+        property bool agentWasPresent: false
+        property bool appsWerePresent: false
+        property bool agentEnteredBeside: false
+        property bool appsEnteredBeside: false
+        property bool agentBornAlone: false
+        property bool appsBornAlone: false
+        function noteEntry(agent) {
+          var group = agent ? centerBeforeModules : centerAfterModules
+          var other = agent ? centerAfterModules : centerBeforeModules
+          if (!group) return
+          var present = group.width > 0 && group.islandRevealProgress > 0
+          var previous = agent ? agentWasPresent : appsWerePresent
+          if (present && !previous) {
+            var beside = other && other.islandRevealProgress > 0
+            if (agent) {
+              agentEnteredBeside = !!beside
+              agentBornAlone = !beside
+              if (beside) appsBornAlone = false
+            } else {
+              appsEnteredBeside = !!beside
+              appsBornAlone = !beside
+              if (beside) agentBornAlone = false
+            }
+          }
+          if (agent) agentWasPresent = present
+          else appsWerePresent = present
+        }
+        readonly property real agentEntryX: workspacePresence < 0.001 && agentEnteredBeside
+          ? -Style.space(16) * (1 - centerBeforeModules.islandRevealProgress) : 0
+        readonly property real appsEntryX: workspacePresence < 0.001 && appsEnteredBeside && !centerAfterModules.forceTopEntry && !centerAfterModules.entryExiting
+          ? Style.space(16) * (1 - centerAfterModules.islandRevealProgress) : 0
+        readonly property real agentEntryY: workspacePresence < 0.001 && !agentEnteredBeside
+          ? -(root.barSize + Style.space(8)) * (1 - centerBeforeModules.islandRevealProgress) : 0
+        readonly property real appsEntryY: (workspacePresence < 0.001 && (!appsEnteredBeside || centerAfterModules.entryExiting)) || centerAfterModules.forceTopEntry
+          ? -(root.barSize + Style.space(8)) * (1 - centerAfterModules.islandRevealProgress) : 0
+        property real packedBalance: bothCompanions ? 0 : (centerBeforeModules.width - centerAfterModules.centeringWidth) / 2
+        readonly property real agentPackedBalance: bothCompanions ? Math.min(-Math.max(0, Style.space(8) - packedGap / 2), packedBalance) : (agentBornAlone ? centerBeforeModules.width / 2 : packedBalance)
+        readonly property real appsPackedBalance: bothCompanions ? Math.max(Math.max(0, Style.space(8) - packedGap / 2), packedBalance) : ((appsBornAlone || centerAfterModules.centerRepositioning || centerAfterModules.entryExiting) ? -centerAfterModules.centeringWidth / 2 : packedBalance)
+        Behavior on packedBalance {
+          enabled: horizontalLayout.workspacePresence < 1 && !centerAfterModules.centerRepositioning
+          NumberAnimation { duration: Timing.centerCompanions.movingMs; easing.type: Easing.InOutCubic }
+        }
+        function blend(packed, anchored) {
+          return packed * (1 - workspacePresence) + anchored * workspacePresence
+        }
 
         CenterGestureArea { anchors.fill: parent }
+
+        // This fixed hotspot only starts when both islands are hidden. Latch
+        // one owner until pointer exit, so moving hover bounds cannot open both.
+        Item {
+          x: (parent.width - width) / 2
+          width: Style.bar.iconSlot
+          height: root.barSize
+          anchors.verticalCenter: parent.verticalCenter
+          visible: centerRoot.hasAnchor && horizontalLayout.workspacePresence < 0.001
+          HoverHandler {
+            enabled: root.centralCompanionHoverCount > 0
+              || (centerBeforeModules.width <= 0 && centerAfterModules.width <= 0)
+            onHoveredChanged: {
+              if (hovered) root.centerHoverCompanion = root.lastCompanion
+              root.centralCompanionHoverCount = Math.max(0, root.centralCompanionHoverCount + (hovered ? 1 : -1))
+            }
+            Component.onDestruction: if (hovered)
+              root.centralCompanionHoverCount = Math.max(0, root.centralCompanionHoverCount - 1)
+          }
+        }
 
         Rectangle {
           enabled: false
@@ -1936,11 +2029,15 @@ Item {
 
         ModuleList {
           id: centerBeforeModules
+          onWidthChanged: horizontalLayout.noteEntry(true)
+          onIslandRevealProgressChanged: horizontalLayout.noteEntry(true)
+          transform: Translate { x: horizontalLayout.agentEntryX; y: horizontalLayout.agentEntryY }
           visible: centerRoot.hasAnchor
           entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
           region: "center"
-          anchors.right: centerAnchorModule.left
-          anchors.rightMargin: Style.space(16) * centerBeforeModules.islandRevealProgress
+          x: horizontalLayout.blend(
+            parent.width / 2 + horizontalLayout.agentPackedBalance - horizontalLayout.packedGap / 2 - width,
+            centerAnchorModule.x - Style.space(16) * islandRevealProgress - width)
           anchors.verticalCenter: centerAnchorModule.verticalCenter
         }
 
@@ -1949,8 +2046,8 @@ Item {
           z: -1
           visible: centerRoot.hasAnchor && centerBeforeModules.width > 0
           opacity: centerBeforeModules.islandRevealProgress
-          x: centerBeforeModules.x - Style.space(8) * centerBeforeModules.islandRevealProgress
-          y: Math.round((parent.height - height) / 2)
+          x: centerBeforeModules.x + horizontalLayout.agentEntryX - Style.space(8) * centerBeforeModules.islandRevealProgress
+          y: Math.round((parent.height - height) / 2) + horizontalLayout.agentEntryY
           width: centerBeforeModules.width + Style.space(16) * centerBeforeModules.islandRevealProgress
           height: root.barSize * (0.84 + 0.16 * centerBeforeModules.islandRevealProgress)
           radius: height / 2
@@ -1962,8 +2059,10 @@ Item {
         // Keep a hover target at the agent island's final position, even hidden.
         Item {
           visible: centerRoot.hasAnchor
-          anchors.right: centerAnchorModule.left
-          anchors.rightMargin: Style.space(8)
+          x: horizontalLayout.blend(
+            parent.width / 2 + horizontalLayout.agentPackedBalance + Math.min(0, Style.space(8) - horizontalLayout.packedGap / 2)
+              - (centerBeforeModules.width > 0 ? 0 : Style.space(16) - Style.space(8)),
+            centerAnchorModule.x - Style.space(8)) - width
           anchors.verticalCenter: centerAnchorModule.verticalCenter
           width: Math.max(Style.bar.iconSlot, centerBeforeModules.hoverTargetWidth) + Style.space(16)
           height: root.barSize
@@ -1997,18 +2096,25 @@ Item {
 
         ModuleList {
           id: centerAfterModules
+          onWidthChanged: horizontalLayout.noteEntry(false)
+          onIslandRevealProgressChanged: horizontalLayout.noteEntry(false)
+          transform: Translate { x: horizontalLayout.appsEntryX; y: horizontalLayout.appsEntryY }
           visible: centerRoot.hasAnchor
           entries: root.entriesAfter(centerRoot.entries, root.centerAnchor)
           region: "center"
-          anchors.left: centerAnchorModule.right
-          anchors.leftMargin: Style.space(16)
+          x: horizontalLayout.blend(
+            parent.width / 2 + horizontalLayout.appsPackedBalance + horizontalLayout.packedGap / 2,
+            centerAnchorModule.x + centerAnchorModule.width + Style.space(16))
           anchors.verticalCenter: centerAnchorModule.verticalCenter
         }
 
         Item {
           visible: centerRoot.hasAnchor && centerAfterModules.hoverTargetWidth > 0
           // The hit target stays at the final resting position during motion.
-          x: centerAnchorModule.x + centerAnchorModule.width + Style.space(8)
+          x: horizontalLayout.blend(
+            parent.width / 2 + horizontalLayout.appsPackedBalance + Math.max(0, horizontalLayout.packedGap / 2 - Style.space(8))
+              + (centerAfterModules.width > 0 ? 0 : Style.space(16) - Style.space(8)),
+            centerAnchorModule.x + centerAnchorModule.width + Style.space(8))
           width: centerAfterModules.hoverTargetWidth + Style.space(16)
           height: root.barSize
           anchors.verticalCenter: centerAnchorModule.verticalCenter
@@ -2023,8 +2129,8 @@ Item {
           z: -1
           visible: centerRoot.hasAnchor && centerAfterModules.mainIslandWidth > 0
           opacity: centerAfterModules.islandRevealProgress
-          x: centerAfterModules.x + centerAfterModules.mainIslandOffsetX - Style.space(8) * centerAfterModules.islandRevealProgress
-          y: Math.round((parent.height - height) / 2)
+          x: centerAfterModules.x + horizontalLayout.appsEntryX + centerAfterModules.mainIslandOffsetX - Style.space(8) * centerAfterModules.islandRevealProgress
+          y: Math.round((parent.height - height) / 2) + horizontalLayout.appsEntryY
           width: centerAfterModules.mainIslandWidth + Style.space(16) * centerAfterModules.islandRevealProgress
           height: root.barSize * (0.84 + 0.16 * centerAfterModules.islandRevealProgress)
           radius: height / 2
@@ -2109,6 +2215,28 @@ Item {
             && "mainIslandOffsetX" in slot.activeItem) return slot.activeItem.mainIslandOffsetX
       }
       return 0
+    }
+    readonly property real centeringWidth: {
+      var slots = root.moduleSlots
+      var width = 0
+      for (var i = 0; i < slots.length; i++) {
+        var slot = slots[i]
+        if (!slot || slot.parent !== moduleListRoot.item || !slot.activeItem) continue
+        width += "centeringWidth" in slot.activeItem ? slot.activeItem.centeringWidth : slot.width
+      }
+      return width
+    }
+    readonly property bool centerRepositioning: companionFlag("centerRepositioning")
+    readonly property bool forceTopEntry: companionFlag("forceTopEntry")
+    readonly property bool entryExiting: companionFlag("entryExiting")
+    function companionFlag(name) {
+      var slots = root.moduleSlots
+      for (var i = 0; i < slots.length; i++) {
+        var slot = slots[i]
+        if (slot && slot.parent === moduleListRoot.item && slot.activeItem
+            && name in slot.activeItem && slot.activeItem[name]) return true
+      }
+      return false
     }
     readonly property real mainIslandWidth: {
       var width = 0
@@ -2503,6 +2631,11 @@ Item {
         ? root : root.pluginBarApiFor(pluginApiId, moduleName, registered)
       if ("moduleName" in target) target.moduleName = moduleName
       if ("settings" in target) target.settings = moduleSettings
+      if (slot.moduleName === "jeebis.apps" && "detachedEntry" in target)
+        target.detachedEntry = Qt.binding(function() {
+          var widgets = root.moduleWidgets("jeebis.workspaces")
+          return widgets.length > 0 && widgets[0].islandRevealProgress < 0.001
+        })
       // Bridge the shared load state without exposing another plugin's objects.
       if (slot.moduleName === "jeebis.workspaces" && "systemBusy" in target)
         target.systemBusy = Qt.binding(function() { return root.loadIslandVisible })

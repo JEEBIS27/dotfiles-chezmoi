@@ -329,7 +329,23 @@ end)
 hl.on("window.open", function(window)
     -- A new window can reuse an address whose destroy handle was invalid.
     local address = window and window.address
-    if address then closing[address] = nil end
+    if address then
+        closing[address] = nil
+        local previous = hl.get_active_window()
+        local previous_address = previous and previous.address
+        hl.timer(function()
+            local opened
+            for _, candidate in ipairs(hl.get_windows({ mapped = true })) do
+                if candidate.address == address then opened = candidate; break end
+            end
+            local active = hl.get_active_window()
+            local workspace = hl.get_active_workspace()
+            if opened and opened.floating and workspace and opened.workspace.id == workspace.id
+                and (not active or active.address == previous_address or active.address == address) then
+                M.focus(opened)
+            end
+        end, { timeout = 80, type = "oneshot" })
+    end
     schedule_sync()
 end)
 hl.on("window.update_rules", schedule_sync)

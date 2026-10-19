@@ -333,3 +333,52 @@ their own geometry and timelines. Agent mirrors this motion to the left, with
 its content gap following the same reveal progress. Both hover targets remain
 at their fully expanded resting positions to prevent hover feedback loops.
 Existing AnimationTiming.js entry/exit durations are unchanged.
+
+## Companions when the workspace capsule is hidden
+
+One visible companion is centered alone. With both present, Agent stays on the
+left and App on the right. Their content gap is `Style.space(16)` with no
+reserved workspace width or doubled margins. Shared balance animation moves a
+single companion back toward center after its neighbor disappears. Directional
+bounds account for the painted background padding, so neither capsule crosses
+the screen midpoint while both are present. Positions blend back to workspace
+anchors when that capsule appears. Backgrounds and hover bounds follow together.
+
+`AnimationTiming.js`: `centerCompanions.movingMs` controls repositioning
+(currently 240 ms). Reload with `omarchy restart shell`.
+
+## Midpoint bounds and central hover ownership
+
+Without the workspace capsule, two companions use their own screen halves:
+Agent's right edge stays left of the midpoint and App's left edge stays right.
+The animated balance only centers a single visible companion. When both are
+present its target is zero; directional clamps prevent crossing the midpoint
+while the balance settles. The regular `Style.space(16)` content gap remains.
+
+A fixed central hover hotspot activates only from the both-hidden state and
+latches the last explicitly revealed/hovered companion until pointer exit.
+Passive hover counts from the moving opposite hit area are ignored during that
+central hold. Agent expansion and App holding use the latched owner. This
+prevents the islands from opening each other as they move under the pointer.
+
+Agent focus does not change the App group's floating/tiled selection or trigger
+its automatic reveal. Dedicated Codex/Herdr initial classes are recognized even
+before WezTerm publishes its process title. Conversion of an existing terminal
+into an Agent is excluded from App's automatic window-change reveal.
+
+## First and neighboring companion entrances
+
+Without the workspace capsule, the first Agent/App island is centered from its
+first frame; width growth does not cause an initial horizontal recentering.
+It enters from above the bar. The presence of the other painted island is
+latched when each island becomes present. Only an island arriving beside an
+already visible neighbor enters horizontally (Agent from the left, App from the
+right). The choice remains stable throughout that entrance/exit cycle.
+
+The host translates complete surfaces and Agent's host-painted background
+together. App's internal workspace-facing horizontal offset is disabled while
+the workspace capsule is absent, avoiding a second conflicting horizontal
+animation. App exports actual standalone arrival/departure visibility as well
+as main-capsule progress, so first-app arrivals participate in the host entrance.
+Invisible hover targets remain at resting positions. Existing Agent/App entry
+and exit timing constants supply the movement progress.

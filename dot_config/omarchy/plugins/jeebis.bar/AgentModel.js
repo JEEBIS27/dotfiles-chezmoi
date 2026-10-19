@@ -19,8 +19,13 @@ function applicationIdentity(client) {
   return String((client.wayland && client.wayland.appId) || ipc["class"] || ipc.initialClass || "").trim()
 }
 function kind(client) {
-  var id = identity(client)
-  if (id === "chatgpt") return "chatgpt"
-  if (id === "org.omarchy.codex" || terminalApplication(client) === "codex") return "codex"
+  if (!client) return ""
+  var ipc = client.lastIpcObject || ({})
+  var ids = [identity(client), String(ipc["class"] || "").toLowerCase(), String(ipc.initialClass || "").toLowerCase()]
+  if (ids.indexOf("chatgpt") >= 0) return "chatgpt"
+  var dedicated = ["org.omarchy.codex", "org.omarchy.herdr", "org.omarchy.jeebis-codex-herdr", "herdr"]
+  for (var i = 0; i < dedicated.length; i++)
+    if (ids.indexOf(dedicated[i]) >= 0) return "codex"
+  if (terminalApplication(client) === "codex") return "codex"
   return ""
 }
