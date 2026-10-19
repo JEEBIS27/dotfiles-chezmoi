@@ -1668,6 +1668,13 @@ Item {
   }
 
   property string lastCompanion: "apps"
+  readonly property bool appsHaveApplications: {
+    var widgets = root.moduleWidgets("jeebis.apps")
+    for (var i = 0; i < widgets.length; i++)
+      if (widgets[i].hasApplications) return true
+    return false
+  }
+  onAppsHaveApplicationsChanged: Qt.callLater(syncCompanionHover)
   property string centerHoverCompanion: "apps"
   property int centralCompanionHoverCount: 0
   onCentralCompanionHoverCountChanged: Qt.callLater(syncCompanionHover)
@@ -1788,6 +1795,8 @@ Item {
 
   function syncCompanionHover() {
     var central = centralCompanionHoverCount > 0
+    if (central && centerHoverCompanion === "apps" && !appsHaveApplications)
+      centerHoverCompanion = "agent"
     var agentDirect = !central && agentHoverCount > 0
     var appsDirect = !central && appsHoverCount > 0
     if (agentDirect) lastCompanion = "agent"
@@ -1977,7 +1986,8 @@ Item {
             enabled: root.centralCompanionHoverCount > 0
               || (centerBeforeModules.width <= 0 && centerAfterModules.width <= 0)
             onHoveredChanged: {
-              if (hovered) root.centerHoverCompanion = root.lastCompanion
+              if (hovered) root.centerHoverCompanion = root.lastCompanion === "apps" && !root.appsHaveApplications
+                ? "agent" : root.lastCompanion
               root.centralCompanionHoverCount = Math.max(0, root.centralCompanionHoverCount + (hovered ? 1 : -1))
             }
             Component.onDestruction: if (hovered)

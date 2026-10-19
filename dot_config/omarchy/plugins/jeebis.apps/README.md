@@ -224,3 +224,16 @@ Floating/tiled selection swaps the list immediately and presents that surface
 from above using `appIsland.enteringMs`, including when Agent is visible. Its
 normal display hold restarts after the drop finishes. The host's balance does
 not add a second easing interval while App's own centering span is animated.
+
+## Existing-window layer changes and empty central hover
+
+Arrival detection checks the cached window address, workspace and application
+identity. Moving an existing window between floating/tiled groups clears its
+pending arrival and never creates a new composition, including repeated model
+updates after the move. Real new windows and first appearances on another
+workspace retain their arrival behavior.
+
+The host's central hover uses the selected group's live `hasApplications`, not
+its fading capsule geometry. If the last companion was App but its current list
+is empty, central hover opens Agent instead. This also applies if that list
+becomes empty while the central hover remains held.

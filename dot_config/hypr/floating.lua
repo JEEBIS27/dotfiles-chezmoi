@@ -293,33 +293,54 @@ hl.on("window.close", function(window)
     if not window then return end
     closing[window.address] = true
     local active = hl.get_active_window()
-    if not window.floating or not active or active.address ~= window.address then return end
+    if not active or active.address ~= window.address then return end
     local home = home_of(window)
-    local candidates = {}
+    if not home then return end
+    local floats, tiles = {}, {}
     for _, other in ipairs(hl.get_windows({ mapped = true })) do
-        if other.floating and not closing[other.address] and home_of(other) == home then
-            table.insert(candidates, other)
+        if other.address ~= window.address and not closing[other.address] and home_of(other) == home then
+            table.insert(other.floating and floats or tiles, other)
         end
     end
-    if #candidates == 0 then return end
+    if window.floating and #floats == 0 then return end
+    if not window.floating and (#tiles > 0 or #floats == 0) then return end
     close_handoff = home
     hl.timer(function()
-        local remaining = {}
+        local remaining_floats, remaining_tiles = {}, {}
         for _, other in ipairs(hl.get_windows({ mapped = true })) do
-            if other.floating and not closing[other.address] and home_of(other) == home then
-                table.insert(remaining, other)
+            if not closing[other.address] and home_of(other) == home then
+                table.insert(other.floating and remaining_floats or remaining_tiles, other)
             end
         end
         close_handoff = nil
-        local target = recent(remaining, last_float[home])
+        local target
+        if window.floating then
+            target = recent(remaining_floats, last_float[home])
+        elseif #remaining_tiles == 0 then
+            target = recent(remaining_floats, last_float[home])
+        end
         if target then M.focus(target) else M.sync() end
-    end, { timeout = 20, type = "oneshot" })
+    end, { timeout = 60, type = "oneshot" })
 end)
 hl.on("window.destroy", function(window)
     -- Destroy notifications can contain an already invalid window handle.
     local address = window and window.address
     if address then closing[address] = nil end
 end)
+
+local function focus_opened_float(address)
+    if not address then return end
+    hl.timer(function()
+        local opened
+        for _, candidate in ipairs(hl.get_windows({ mapped = true })) do
+            if candidate.address == address then opened = candidate; break end
+        end
+        local workspace = hl.get_active_workspace()
+        if opened and opened.floating and workspace and home_of(opened) == workspace_selector(workspace) then
+            M.focus(opened)
+        end
+    end, { timeout = 120, type = "oneshot" })
+end
 
 hl.on("window.active", function(window)
     if busy then return end
@@ -329,23 +350,7 @@ end)
 hl.on("window.open", function(window)
     -- A new window can reuse an address whose destroy handle was invalid.
     local address = window and window.address
-    if address then
-        closing[address] = nil
-        local previous = hl.get_active_window()
-        local previous_address = previous and previous.address
-        hl.timer(function()
-            local opened
-            for _, candidate in ipairs(hl.get_windows({ mapped = true })) do
-                if candidate.address == address then opened = candidate; break end
-            end
-            local active = hl.get_active_window()
-            local workspace = hl.get_active_workspace()
-            if opened and opened.floating and workspace and opened.workspace.id == workspace.id
-                and (not active or active.address == previous_address or active.address == address) then
-                M.focus(opened)
-            end
-        end, { timeout = 80, type = "oneshot" })
-    end
+    if address then closing[address] = nil; focus_opened_float(address) end
     schedule_sync()
 end)
 hl.on("window.update_rules", schedule_sync)

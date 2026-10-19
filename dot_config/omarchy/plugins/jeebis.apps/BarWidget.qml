@@ -26,6 +26,7 @@ Ui.BarWidget {
     if (!client || AgentModel.kind(client) || !client.workspace || client.workspace.id !== workspaceId) return selectedFloating
     return !!((client.lastIpcObject || ({})).floating)
   }
+  readonly property bool hasApplications: selectedGroup.appItems.length > 0
   readonly property var selectedGroup: selectedFloating ? floatingSurface.group : tiledSurface.group
   // Each surface owns its capsule; keep the host background disabled.
   readonly property real mainIslandWidth: 0

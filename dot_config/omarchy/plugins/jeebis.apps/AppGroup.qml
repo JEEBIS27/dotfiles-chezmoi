@@ -432,6 +432,11 @@ Ui.BarWidget {
       var restoredFromDesktop = !parkedForDesktop && previousWindow && previousWindow.parkedForDesktop === true
       var membershipFloating = parkedForDesktop && previousWindow ? previousWindow.floating : window.floating
       var changedLayer = previousWindow && previousWindow.floating !== membershipFloating
+      // Group membership alone is not a launch. Both persistent groups cache
+      // every address, so later snapshots cannot mistake a layer move for one.
+      var enteredWorkspace = !previousWindow || previousWindow.workspaceId !== membershipId
+        || previousWindow.key !== window.key
+      if (changedLayer || restoredFromDesktop) delete newKeys[window.key]
       archive[window.address] = { floating: membershipFloating, address: window.address, key: window.key,
         workspaceId: membershipId, parkedForDesktop: parkedForDesktop, seenAt: Date.now() }
       // Presence is scoped to each workspace. Another workspace's copy does
@@ -439,8 +444,7 @@ Ui.BarWidget {
       if (membershipFloating !== floatingGroup) continue
       var scopedKey = String(membershipId) + ":" + window.key
       nextApplications[scopedKey] = true
-      if (restoredFromDesktop) delete newKeys[window.key]
-      if (!switchHeld && trackingReady && !changedLayer && !parkedForDesktop && !restoredFromDesktop
+      if (!switchHeld && trackingReady && enteredWorkspace && !changedLayer && !parkedForDesktop && !restoredFromDesktop
           && !knownApplications[scopedKey] && window.workspaceId === currentWorkspaceId)
         newKeys[window.key] = Date.now()
     }
@@ -462,7 +466,7 @@ Ui.BarWidget {
     for (var n = 0; n < appItems.length; n++) {
       var app = appItems[n]
       var key = app.identity.toLowerCase()
-      if (newKeys[key] && Date.now() - newKeys[key] < 2000 && arrivalIndex(key) < 0) {
+      if (!switchHeld && newKeys[key] && Date.now() - newKeys[key] < 2000 && arrivalIndex(key) < 0) {
         holdComposition(Timing.appArrival.settledMs)
         arrivals.append({ appKey: key, identity: app.identity, appName: app.name, icon: app.icon, phase: 0 })
         arrivalRevision++
