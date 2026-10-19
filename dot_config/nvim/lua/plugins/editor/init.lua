@@ -30,6 +30,19 @@ return {
         },
       })
 
+      -- Keep floating terminals visible when layout keys move focus away.
+      -- Replace Toggleterm's default WinLeave handler, retaining mode persistence.
+      vim.api.nvim_clear_autocmds({ group = "ToggleTermCommands", event = "WinLeave" })
+      vim.api.nvim_create_autocmd("WinLeave", {
+        group = "ToggleTermCommands",
+        pattern = { "term://*#toggleterm#*", "term://*::toggleterm::*" },
+        callback = function()
+          local _, term = require("toggleterm.terminal").identify()
+          if term then term:persist_mode() end
+        end,
+        desc = "Keep Toggleterm open when moving focus",
+      })
+
       -- ターミナルの便利なコマンド
       vim.api.nvim_create_user_command("VTerminal", ":1ToggleTerm", {})
       vim.api.nvim_create_user_command("HTerminal", ":2ToggleTerm direction=horizontal", {})

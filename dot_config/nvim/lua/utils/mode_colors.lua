@@ -37,7 +37,7 @@ function M.get_scene(mode, operator)
     return "insert"
   elseif operator == "y" then
     return "copy"
-  elseif mode:sub(1, 1) == "i" or mode:sub(1, 1) == "r" or mode:sub(1, 1) == "R" then
+  elseif mode:sub(1, 1) == "i" or mode:sub(1, 1) == "R" then
     return "insert"
   elseif mode:sub(1, 1) == "v" or mode:sub(1, 1) == "V" or mode:sub(1, 1) == "\22" then
     return "visual"

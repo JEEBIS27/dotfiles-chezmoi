@@ -52,6 +52,7 @@ end
 local MIN_WINDOW_RATIO = 0.25
 local MAX_WINDOW_RATIO = 0.75
 local RESIZE_STEP = 50
+local floating_controls = require("hypr.floating")
 
 -- Scroll時、フォーカス列の左右位置に応じて通常リサイズ方向を反転する。
 -- trueで有効、falseで無効。
@@ -210,6 +211,7 @@ local function direction_for(item)
 end
 
 local function focus_direction(item)
+    if floating_controls.focus_direction(item.direction) then return end
     prepare_directional_action()
 
     if item.vim == "J" or item.vim == "K" then
@@ -291,7 +293,7 @@ local function swap_direction(item)
                 hl.dispatch(hl.dsp.window.move({
                     window = target, x = float_x, y = float_y, relative = false,
                 }))
-                hl.dispatch(hl.dsp.focus({ window = active }))
+                floating_controls.focus(target)
             end, { timeout = 50, type = "oneshot" })
         end, { timeout = 50, type = "oneshot" })
         return
@@ -304,12 +306,7 @@ end
 local function move_direction(item)
     local active = hl.get_active_window()
     if active and active.floating then
-        hl.dispatch(hl.dsp.window.move({
-            window = active,
-            x = item.resize.x or 0,
-            y = item.resize.y or 0,
-            relative = true,
-        }))
+        floating_controls.move(item.resize.x or 0, item.resize.y or 0)
         return
     end
 
@@ -328,20 +325,8 @@ local function resize(item, target_ratio)
         return
     end
 
-    -- Floating geometry is independent of tiled columns and neighbor limits.
     if active.floating then
-        local x = item.resize and item.resize.x or 0
-        local y = item.resize and item.resize.y or 0
-        if target_ratio then
-            local logical_width = logical_monitor_size(monitor)
-            x = target_ratio * logical_width - active.size.x
-        end
-        hl.dispatch(hl.dsp.window.resize({
-            window = active,
-            x = x,
-            y = y,
-            relative = true,
-        }))
+        floating_controls.resize(item.resize and item.resize.x or 0, item.resize and item.resize.y or 0, target_ratio)
         return
     end
 
@@ -502,6 +487,7 @@ end
 
 
 local function toggle_full_width()
+    if floating_controls.toggle_maximize() then return end
     local monitor = hl.get_active_monitor()
     local active = hl.get_active_window()
     if not monitor or not active then
@@ -760,8 +746,13 @@ o.bind("SUPER + ALT + CTRL + K", "Herdr keybindings", "omarchy-menu-herdr-keybin
 -- H/J/K/L にあった既定機能を Shift 付きへ移し
 o.bind("SUPER + SHIFT + ALT + J", "Toggle window split", hl.dsp.layout("togglesplit"))
 o.bind("SUPER + SHIFT + ALT + K", "Keybindings", "omarchy-menu-keybindings")
-hl.unbind("SUPER + SHIFT + T")
-o.bind("SUPER + SHIFT + T", "Toggle workspace layout", "omarchy-hyprland-workspace-layout-toggle")
+for _, key in ipairs({ "SUPER + T", "SUPER + SHIFT + T", "SUPER + CTRL + T", "SUPER + CTRL + SHIFT + T" }) do
+    hl.unbind(key)
+end
+o.bind("SUPER + T", "Focus tiled / floating windows", floating_controls.toggle_plane)
+o.bind("SUPER + SHIFT + T", "Toggle window floating/tiling", floating_controls.toggle_window)
+o.bind("SUPER + CTRL + T", "Toggle workspace layout", "omarchy-hyprland-workspace-layout-toggle")
+o.bind("SUPER + CTRL + SHIFT + T", "Activity", { tui = "btop" })
 
 
 -- Reveal the app island for every workspace command, including reselecting
@@ -803,7 +794,7 @@ local function close_workspace_windows()
     local workspace = hl.get_active_special_workspace() or hl.get_active_workspace()
     if not workspace then return end
     local addresses = {}
-    for _, window in ipairs(hl.get_workspace_windows(workspace.id)) do
+    for _, window in ipairs(floating_controls.workspace_windows(workspace, true)) do
         addresses[#addresses + 1] = window.address
     end
     for _, address in ipairs(addresses) do

@@ -14,11 +14,19 @@ local function normal_action(fn)
     if insert and vim.bo.buftype == "" then vim.cmd.startinsert() end
   end
 end
+local function focus_window(direction)
+  if vim.bo.filetype == "toggleterm" and vim.api.nvim_win_get_config(0).relative ~= "" then
+    -- Directional commands leave a float for its origin before navigating splits.
+    local origin = require("toggleterm.ui").get_origin_window()
+    if origin and vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
+  end
+  vim.cmd.wincmd(direction)
+end
 local modes = { "n", "i", "x", "t" }
 for _, item in ipairs({ { "h", "Left", "h" }, { "j", "Down", "j" },
   { "k", "Up", "k" }, { "l", "Right", "l" } }) do
   for _, key in ipairs({ item[1], item[2] }) do
-    map(modes, "<C-" .. key .. ">", normal_action(function() vim.cmd.wincmd(item[3]) end), "Layout: focus " .. item[3])
+    map(modes, "<C-" .. key .. ">", normal_action(function() focus_window(item[3]) end), "Layout: focus " .. item[3])
     local resize = { h = "vertical resize -3", l = "vertical resize +3", j = "resize -2", k = "resize +2" }
     map(modes, "<C-S-" .. key .. ">", normal_action(function() vim.cmd(resize[item[3]]) end), "Layout: resize " .. item[3])
   end
