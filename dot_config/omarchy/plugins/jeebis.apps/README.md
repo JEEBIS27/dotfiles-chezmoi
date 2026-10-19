@@ -129,3 +129,57 @@ OpenCode (dedicated Agent identities would also need to be added).
 References:
 - https://wezterm.org/config/lua/PaneInformation.html
 - https://wezterm.org/config/lua/window-events/format-window-title.html
+
+## Web application icons
+
+Normal applications use `desktopEntryForClient()` in `BarWidget.qml` to resolve
+an installed `.desktop` entry and its `Icon=` value, then `iconSource()` resolves
+the icon name or file URL. Desktop launchers live in
+`~/.local/share/applications/`; user icons live in
+`~/.local/share/icons/hicolor/256x256/apps/`.
+
+`webAppEntries` maps Chromium URL-derived classes to the Omarchy launchers
+Calendar, Document, Presentation, Sheets and Teams. This matches the dedicated web-app
+window's class, not its changeable page title. A regular browser tab continues
+to use the browser icon. Teams accepts both teams.microsoft.com and
+teams.cloud.microsoft. The mapped apps use explicit user icon paths to avoid
+ambiguity with theme icon names.
+
+Google Docs/Slides/Sheets icons are from Google's static asset host:
+- https://ssl.gstatic.com/docs/doclist/images/mediatype/icon_1_document_x128.png
+- https://ssl.gstatic.com/docs/doclist/images/mediatype/icon_1_presentation_x128.png
+- https://ssl.gstatic.com/docs/doclist/images/mediatype/icon_1_spreadsheet_x128.png
+The existing Google Calendar and Teams icons are reused. Icon assets are also saved in chezmoi's
+`dot_local/share/icons/hicolor/256x256/apps/` directory. Changes to QML can be
+reloaded with `omarchy restart shell`.
+
+## Automatic icons for newly installed web apps
+
+Install normally through Omarchy, or run:
+
+```sh
+omarchy webapp install "App name" "https://example.com"
+```
+
+Omarchy's installer already downloads the site's touch icon/favicon when no icon
+is specified, writes `Icon=` into the `.desktop` launcher, and updates the user
+icon cache. The result may be a generic site favicon; a custom icon URL/name can
+still be supplied when needed. Download failure is reported by the installer.
+
+The App island now discovers installed launchers automatically through
+`DesktopEntries.applications`, reads their parsed `command` and `icon`, and
+matches the Chromium URL-derived class to the launch URL. It supports
+`omarchy-launch-webapp URL` and direct browser `--app=URL` launchers. Newly
+registered entries update through DesktopEntries without adding QML mappings.
+The five existing curated mappings remain as icon/path and host-alias overrides.
+Normal browser tabs keep their browser icon. Two launchers with identical URL
+host/path but different query parameters share a Chromium class and cannot be
+reliably distinguished by this mechanism. Browser-managed hashed PWA IDs rely
+on their browser-created desktop registrations instead of the URL matcher.
+
+Only registration metadata is inspected; no launcher commands are executed.
+This automatic lookup does not add future applications/icons to chezmoi: add
+new launchers and downloaded icon files explicitly when they should be synced.
+
+Chromium app-name reference:
+https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/web_applications/web_app_helpers.cc

@@ -481,7 +481,65 @@ BarWidget {
         : departures.count > 0 ? Timing.appDeparture.separatingMs : Timing.appIsland.resizingMs; easing.type: Easing.InOutCubic }
   }
 
+  // Omarchy --app windows expose a Chromium URL-derived class, rather than
+  // the launcher name. Match that stable class even when a document is renamed.
+  readonly property var webAppEntries: [
+    { pattern: /^(?:chrome|chromium|helium|brave|msedge)-calendar\.google\.com(?:__|[\/_-]|$)/, desktopId: "Calendar", name: "Google Calendar", icon: "calendar" },
+    { pattern: /^(?:chrome|chromium|helium|brave|msedge)-docs\.google\.com__document(?:[\/_-]|$)/, desktopId: "Document", name: "Google Docs", icon: "document" },
+    { pattern: /^(?:chrome|chromium|helium|brave|msedge)-docs\.google\.com__presentation(?:[\/_-]|$)/, desktopId: "Presentation", name: "Google Slides", icon: "presentation" },
+    { pattern: /^(?:chrome|chromium|helium|brave|msedge)-docs\.google\.com__spreadsheets(?:[\/_-]|$)/, desktopId: "Sheets", name: "Google Sheets", icon: "sheets" },
+    { pattern: /^(?:chrome|chromium|helium|brave|msedge)-teams\.(?:microsoft\.com|cloud\.microsoft)(?:__|[\/_-]|$)/, desktopId: "Teams", name: "Microsoft Teams", icon: "teams" }
+  ]
+  function webAppUrlKey(url) {
+    var match = /^https?:\/\/([^\/?#]+)([^?#]*)/i.exec(String(url || ""))
+    if (!match) return ""
+    var host = match[1].replace(/^.*@/, "").replace(/:[0-9]+$/, "").toLowerCase()
+    var path = match[2] || "/"
+    // Chromium's URL app name is host + "_" + path; Linux classes replace
+    // path separators with underscores and append a browser profile suffix.
+    return (host + "_" + path.replace(/\//g, "_")).toLowerCase()
+  }
+  readonly property var discoveredWebApps: {
+    var entries = DesktopEntries.applications.values || []
+    var result = []
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i]
+      if (!entry || !entry.icon) continue
+      var command = entry.command || []
+      var url = ""
+      for (var j = 0; j < command.length; j++) {
+        var arg = String(command[j])
+        if (arg.replace(/^.*\//, "") === "omarchy-launch-webapp" && j + 1 < command.length) {
+          url = String(command[j + 1]); break
+        }
+        if (arg.indexOf("--app=") === 0) { url = arg.slice(6); break }
+        if (arg === "--app" && j + 1 < command.length) { url = String(command[j + 1]); break }
+      }
+      var key = root.webAppUrlKey(url)
+      if (key) result.push({ key: key, entry: entry })
+    }
+    result.sort(function(a, b) { return b.key.length - a.key.length })
+    return result
+  }
   function desktopEntryForClient(identity, title) {
+    var webId = String(identity || "").toLowerCase()
+    for (var w = 0; w < webAppEntries.length; w++) {
+      var app = webAppEntries[w]
+      if (!app.pattern.test(webId)) continue
+      var desktop = DesktopEntries.byId(app.desktopId)
+      var dataHome = Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")
+      return { name: desktop ? desktop.name : app.name,
+        icon: "file://" + dataHome + "/icons/hicolor/256x256/apps/" + app.icon + ".png" }
+    }
+    // New desktop registrations are watched by DesktopEntries. Read their
+    // already-tokenized command and Icon field, without running any command.
+    var appClass = webId.replace(/^(?:chrome|chromium|helium|brave|msedge|microsoft-edge|opera|vivaldi)-/, "")
+    if (appClass !== webId) {
+      for (var d = 0; d < discoveredWebApps.length; d++) {
+        var candidate = discoveredWebApps[d]
+        if (appClass.indexOf(candidate.key + "-") === 0) return candidate.entry
+      }
+    }
     var entries = DesktopEntries.applications.values || []
     var cleanTitle = String(title || "").trim().toLowerCase()
 
