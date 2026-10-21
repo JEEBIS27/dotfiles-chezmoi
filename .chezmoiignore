@@ -86,3 +86,53 @@ scripts
 {{ if not $p.fonts }}
 .local/share/fonts/HackGen
 {{ end }}
+
+# Managed by /home/jeebis/Git/home-manager; keep the legacy source for recovery.
+.config/tmux/tmux.conf
+
+# Zsh and Sheldon migrated to Home Manager.
+.zshrc
+.config/zsh/config.sh
+.config/zsh/fzf.zsh
+.config/zsh/my_alias.zsh
+.config/zsh/unified_keys.zsh
+.config/sheldon/plugins.toml
+
+# Home Manager application migration: nvim
+.config/nvim
+
+# Home Manager application migration: yazi
+.config/yazi
+
+# Home Manager application migration: bat-theme
+.config/bat
+.config/omarchy/themed/palette.lua.tpl
+.config/omarchy/themed/preview.tmTheme.tpl
+.config/omarchy/themed/yazi.toml.tpl
+.config/omarchy/hooks/theme-set.d/refresh-bat.hook
+
+# Home Manager application migration: herdr
+.config/herdr/config.toml
+
+# Shared desktop migrated to Home Manager (Omarchy/NixOS backends).
+.config/hypr
+.config/omarchy/plugins
+.config/omarchy/shell.json
+.config/wezterm
+.local/bin/jeebis-bar-action
+.local/bin/jeebis-theme-cycle
+.local/bin/jeebis-codex-herdr
+.local/bin/jeebis-chatgpt-new-window
+.config/omarchy/themed/wezterm.toml.tpl
+
+# Shared palette presets, Fcitx/Mozkey preferences and rclone units: Home Manager.
+.config/fcitx5/config
+.config/fcitx5/profile
+.config/fcitx5/conf/keyboard.conf
+.config/fcitx5/conf/mozkey-ibg.conf
+.config/mozkey-ibg/config1.db
+.config/systemd/user/rclone-gdrive.service
+.config/systemd/user/rclone-onedrive.service
+.config/omarchy/themes/tokyonight/colors.toml
+.config/omarchy/themes/kanagawa/colors.toml
+.config/omarchy/themes/catppuccin/colors.toml
